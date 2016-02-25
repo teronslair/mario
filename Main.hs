@@ -1,8 +1,12 @@
+{-# LANGUAGE Arrows #-}
 module Main where
 
+import FRP.Yampa
 import System.IO
 import Graphics.UI.GLUT
 import Foreign.C.Types
+import Data.IORef
+
 
 data GameElement = GameElement {
 						x :: GLfloat,
@@ -10,20 +14,29 @@ data GameElement = GameElement {
 						vx:: GLfloat,
 						vy:: GLfloat,
 						w :: GLfloat,
-						h :: GLfloat
-						-- col :: Color3
+						h :: GLfloat,
+						col :: Color3 GLfloat
 					} deriving (Show)
 
-type Game = [ GameElement ]
+type GameScene = [ GameElement ]
 
--- main =  putStr "Provide name :: " >> hFlush stdout >> getLine >>= \l -> putStr ("Hello " ++ l ++ "!\n")
+data Game = Game {
+				mario :: GameElement,
+				world :: GameScene
+			} deriving (Show)
+
 main :: IO ()
-main = do
-	(_progName, _args) <- Graphics.UI.GLUT.getArgsAndInitialize
-	_window <- Graphics.UI.GLUT.createWindow "Hello World"
-	Graphics.UI.GLUT.displayCallback $= display
-	reshapeCallback $= Just reshape
-	mainLoop
+main = do {
+	let {myGame = Game {mario=GameElement{x=20, y=20, vx=0, vy=0, w=10, h=20, col=Color3 1 0 (0::GLfloat)}, 
+		 				world = [GameElement {x=200, y=400, vx=0, vy=0, w=300, h=200, col=Color3 0 0 (1::GLfloat)} , GameElement {x=100, y=50, vx=0, vy=0, w=100, h=50, col=Color3 0 0 (1::GLfloat)}]
+		 				}
+		};
+	(_progName, _args) <- Graphics.UI.GLUT.getArgsAndInitialize;
+	_window <- Graphics.UI.GLUT.createWindow "Hello World";
+	Graphics.UI.GLUT.displayCallback $= (display myGame); 
+	reshapeCallback $= Just reshape;
+	mainLoop;
+	}
 
 reshape :: ReshapeCallback
 reshape size = do
@@ -32,6 +45,7 @@ reshape size = do
 
 color3f r g b = color $ Color3 r g (b :: GLfloat)
 vertex3f x y z = vertex $ Vertex3 x y (z :: GLfloat)
+
 
 my_translate :: GameElement -> GameElement
 my_translate g = g {x=(x g)-500, y=(y g)-500}
@@ -49,17 +63,17 @@ renderGameElement myge = do {
 								let {g = my_normalize $ my_translate myge};
 								-- let g = GameElement {x=20, y=40, vx=0, vy=0, w=10, h=10};
 								-- let a = 3;
-								color3f 1 0 0;
+								color (col g);
 								vertex3f (x g - (w g) / 2 ) (y g - (h g) / 2 ) 0;
 								vertex3f (x g + (w g) / 2 ) (y g - (h g) / 2 ) 0;
 								vertex3f (x g + (w g) / 2 ) (y g + (h g) / 2 ) 0;
 								vertex3f (x g - (w g) / 2 ) (y g + (h g) / 2 ) 0;
 							}
  
-display :: DisplayCallback
-display = do
+display :: Game -> DisplayCallback
+display myGame = do
 	clear [ ColorBuffer ]
-	let myGame = [GameElement {x=20, y=40, vx=0, vy=0, w=10, h=10} , GameElement {x=100, y=50, vx=0, vy=0, w=100, h=50}]
+	-- let myGame = [GameElement {x=20, y=40, vx=0, vy=0, w=10, h=10, col=Color3 0 0 (1::GLfloat)} , GameElement {x=100, y=50, vx=0, vy=0, w=100, h=50, col=Color3 1 0 (0::GLfloat)}]
 	-- renderPrimitive Quads (do {
 	-- 							    color3f 1 0 0;
 	-- 							    vertex3f 0 0 0;
@@ -67,5 +81,6 @@ display = do
 	-- 							    vertex3f 0.2 0.2 0;
 	-- 							    vertex3f 0.2 0 0; 
 	-- 							})
-	foldl (\a x -> a >> x) (return ()) (map (renderPrimitive Quads) (map renderGameElement myGame))
+	(renderPrimitive Quads) (renderGameElement (mario myGame))
+	foldl (\a x -> a >> x) (return ()) (map (renderPrimitive Quads) (map renderGameElement (world myGame) ))
 	flush
