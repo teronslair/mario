@@ -1,4 +1,4 @@
-{-# LANGUAGE Arrows #-}
+{-# LANGUAGE Arrows, BangPatterns, NamedFieldPuns #-}
 module Main where
 
 import FRP.Yampa
@@ -7,6 +7,7 @@ import Graphics.UI.GLUT
 import Foreign.C.Types
 import Data.IORef
 import Data.Time.Clock.POSIX
+import Unsafe.Coerce
 
 ---------------------------------- general types for the game ---------------
 
@@ -46,6 +47,22 @@ idle newInput oldTime rh = do
     writeIORef oldTime newTime'
     return ()
 
+-- testsf :: Game -> SF () Game
+-- testsf game0 = constant game0
+testsf :: SF Game Game
+-- testsf = arr (\g->g)
+testsf = proc game -> do
+	vhoriz <- integral -< vx $ mario $ game
+	returnA -< game {mario = (mario game) {vx = vhoriz}}
+	-- where newgame = game {mario = (mario game) {vx = vhoriz}}
+
+-- integr' :: SF GLfloat GLfloat
+-- -- integr' = proc in -> do
+
+-- integr' = (iPre zeroVector &&& time) >>> sscan f (zeroVector, 0) >>> arr fst
+--     where f (!prevVal, !prevTime) (!val, !time) = (prevVal ^+^ (realToFrac $ time - prevTime) *^ val, time)
+
+
 mainSF = parseInput >>> update >>> draw
 
 update = undefined
@@ -59,7 +76,7 @@ draw = arr $ (\game -> do
 
 main :: IO ()
 main = do {
-	let {myGame = Game {mario=GameElement{x=20, y=20, vx=0, vy=0, w=10, h=20, col=Color3 1 0 (0::GLfloat)}, 
+	let {myGame = Game {mario=GameElement{x=20, y=20, vx=2, vy=0, w=10, h=20, col=Color3 1 0 (0::GLfloat)}, 
 		 				world = [GameElement {x=200, y=400, vx=0, vy=0, w=300, h=200, col=Color3 0 0 (1::GLfloat)} , GameElement {x=100, y=50, vx=0, vy=0, w=100, h=50, col=Color3 0 0 (1::GLfloat)}]
 		 				}
 		};
