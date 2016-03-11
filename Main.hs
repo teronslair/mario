@@ -52,9 +52,8 @@ idle newInput oldTime rh = do
 testsf :: SF Game Game
 -- testsf = arr (\g->g)
 testsf = proc game -> do
-	vhoriz <- integral -< vx $ mario $ game
-	returnA -< game {mario = (mario game) {vx = vhoriz}}
-	-- where newgame = game {mario = (mario game) {vx = vhoriz}}
+	horiz_movement <- integral -< ((realToFrac (vx $ mario $ game)) :: Float)
+	returnA -< game {mario = (mario game) {x = ((realToFrac horiz_movement) :: GLfloat) }}
 
 -- integr' :: SF GLfloat GLfloat
 -- -- integr' = proc in -> do
@@ -63,7 +62,10 @@ testsf = proc game -> do
 --     where f (!prevVal, !prevTime) (!val, !time) = (prevVal ^+^ (realToFrac $ time - prevTime) *^ val, time)
 
 
-mainSF = parseInput >>> update >>> draw
+-- mainSF = parseInput >>> update >>> draw
+initial_game = Game {mario = GameElement {x = 0.0, y = 20.0, vx = 2.0, vy = 0.0, w = 10.0, h = 20.0, col = Color3 1.0 0.0 0.0}, world = []}
+mainSF = constant initial_game >>> testsf  >>> draw
+mainSF1 = constant initial_game >>> testsf
 
 update = undefined
 
@@ -76,10 +78,6 @@ draw = arr $ (\game -> do
 
 main :: IO ()
 main = do {
-	let {myGame = Game {mario=GameElement{x=20, y=20, vx=2, vy=0, w=10, h=20, col=Color3 1 0 (0::GLfloat)}, 
-		 				world = [GameElement {x=200, y=400, vx=0, vy=0, w=300, h=200, col=Color3 0 0 (1::GLfloat)} , GameElement {x=100, y=50, vx=0, vy=0, w=100, h=50, col=Color3 0 0 (1::GLfloat)}]
-		 				}
-		};
 	newInputRef <- newIORef NoEvent;   -- IORef to pass keyboard event between yampa components
     oldTimeRef  <- newIORef (0 :: Int); -- IORef to pass time delta between yampa components
 
@@ -88,7 +86,7 @@ main = do {
                     mainSF;
 	Graphics.UI.GLUT.displayCallback $= return ();
 	Graphics.UI.GLUT.idleCallback $= Just (idle newInputRef oldTimeRef rh);
-	Graphics.UI.GLUT.keyboardMouseCallback $= Just (\k ks m _ -> writeIORef newInputRef (Event $ Keyboard k ks m));
+	-- Graphics.UI.GLUT.keyboardMouseCallback $= Just (\k ks m _ -> writeIORef newInputRef (Event $ Keyboard k ks m));
 	oldTime' <- get elapsedTime;
     writeIORef oldTimeRef oldTime';
 	mainLoop;
