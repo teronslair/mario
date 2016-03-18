@@ -16,6 +16,7 @@ data GameElement = GameElement {
 						y :: GLfloat,
 						vx:: GLfloat,
 						vy:: GLfloat,
+						ay:: GLfloat,
 						w :: GLfloat,
 						h :: GLfloat,
 						col :: Color3 GLfloat
@@ -49,11 +50,30 @@ idle newInput oldTime rh = do
 
 -- testsf :: Game -> SF () Game
 -- testsf game0 = constant game0
+testsf_with_end :: SF Game (Game , Event (Bool))
+testsf_with_end = proc game -> do
+	vert_speed <- integral -< ((realToFrac (ay $ mario $ game)) :: Float)
+	vert_movement <- integral -< vert_speed + ((realToFrac (vy $ mario $ game)) :: Float)
+	-- newy <- ((realToFrac (vert_movement + ((realToFrac ( y $ mario $ game)) :: Float) ) ) :: GLfloat)
+	-- ev <- NoEvent
+	let newy = ((realToFrac (vert_movement + ((realToFrac ( y $ mario $ game)) :: Float) ) ) :: GLfloat)
+	-- ev <- edge -< newy <= 0
+	let ev = if ( newy > 0) then NoEvent else Event (True) 
+	returnA -< (game {mario = (mario game) {y = newy }}, ev ) 
+	-- returnA -< (game {mario = (mario game) {y = ((realToFrac (vert_movement + ((realToFrac ( y $ mario $ game)) :: Float) ) ) :: GLfloat) }}, if ( ((realToFrac (vert_movement + ((realToFrac ( y $ mario $ game)) :: Float) ) ) :: GLfloat) > 0) then NoEvent else Event () ) 
+	-- where newy = ((realToFrac (vert_movement + ((realToFrac ( 0.0)) :: Float) ) ) :: GLfloat)
+	-- where newy = ((realToFrac (vert_movement + ((realToFrac ( y $ mario $ game)) :: Float) ) ) :: GLfloat)
+		  -- ev = if (1 > 0) then NoEvent else Event ()
+	-- where x = newy
+
+
+
 testsf :: SF Game Game
 -- testsf = arr (\g->g)
 testsf = proc game -> do
-	horiz_movement <- integral -< ((realToFrac (vx $ mario $ game)) :: Float)
-	returnA -< game {mario = (mario game) {x = ((realToFrac horiz_movement) :: GLfloat) }}
+	vert_speed <- integral -< ((realToFrac (ay $ mario $ game)) :: Float)
+	vert_movement <- integral -< vert_speed + ((realToFrac (vy $ mario $ game)) :: Float)
+	returnA -< game {mario = (mario game) {y = ((realToFrac (vert_movement + ((realToFrac ( y $ mario $ game)) :: Float) ) ) :: GLfloat) }}
 
 -- integr' :: SF GLfloat GLfloat
 -- -- integr' = proc in -> do
@@ -63,9 +83,14 @@ testsf = proc game -> do
 
 
 -- mainSF = parseInput >>> update >>> draw
-initial_game = Game {mario = GameElement {x = 0.0, y = 20.0, vx = 2.0, vy = 0.0, w = 10.0, h = 20.0, col = Color3 1.0 0.0 0.0}, world = []}
-mainSF = constant initial_game >>> testsf  >>> draw
+initial_game = Game {mario = GameElement {x = 0.0, y = 20.0, vx = 0.0, vy = 100.0, ay = -4.0, w = 10.0, h = 20.0, col = Color3 1.0 0.0 0.0}, world = []}
+-- mainSF = constant initial_game >>> testsf  >>> draw
+mainSF = constant initial_game >>> switch testsf_with_end testsf_cont  >>> draw
 mainSF1 = constant initial_game >>> testsf
+
+-- testsf_cont :: Event (Bool) -> SF Game Game
+-- testsf_cont (_) = testsf
+testsf_cont _ = testsf
 
 update = undefined
 
