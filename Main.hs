@@ -21,6 +21,12 @@ data GameElement = GameElement {
 						h :: GLfloat,
 						col :: Color3 GLfloat
 					} deriving (Show)
+data StageBounds = StageBounds {
+						highx :: GLfloat,
+						lowx :: GLfloat,
+						highy :: GLfloat,
+						lowy :: GLfloat
+					} deriving (Show)
 
 type GameScene = [ GameElement ]
 
@@ -38,15 +44,21 @@ myInitGL = do
 
 idle :: IORef (Event Input) -> IORef Int -> 
         ReactHandle (Event Input) (IO ()) -> IO ()
-idle newInput oldTime rh = do
+idle newInput oldTime rh = do 
     newInput' <- readIORef newInput
     newTime'  <- get elapsedTime
     oldTime'  <- get oldTime
-    let dt = let dt' = (fromIntegral $ newTime' - oldTime')/50
-             in if dt' < 0.8 then dt' else 0.8
-    react rh (dt, Just newInput')
-    writeIORef oldTime newTime'
+    -- let dt = let dt' = (fromIntegral $ newTime' - oldTime')/50
+             -- in if dt' < 0.8 then dt' else 0.8
+    let dt = ((fromIntegral ( newTime' - oldTime'))/50)
+    _ <- if (dt > 0.8) then do 
+    							react rh (dt, Just newInput')
+    							writeIORef oldTime newTime' 
+    				else return()
+    -- react rh (dt, Just newInput')
+    -- writeIORef oldTime newTime'
     return ()
+
 
 -- testsf :: Game -> SF () Game
 -- testsf game0 = constant game0
@@ -75,22 +87,71 @@ testsf = proc game -> do
 	vert_movement <- integral -< vert_speed + ((realToFrac (vy $ mario $ game)) :: Float)
 	returnA -< game {mario = (mario game) {y = ((realToFrac (vert_movement + ((realToFrac ( y $ mario $ game)) :: Float) ) ) :: GLfloat) }}
 
+move_mario :: Game -> SF ParsedInput Game
+-- testsf = arr (\g->g)
+move_mario game = proc pi@(ParsedInput{ wCount, aCount, sCount, dCount }) -> do
+	-- vert_speed <- integral -< ((realToFrac (ay $ mario $ game)) :: Float)
+	let horiz_movement = 15 * realToFrac(dCount - aCount) :: Float
+	returnA -< game {mario = (mario game) {x = ((realToFrac (horiz_movement + ((realToFrac ( x $ mario $ game)) :: Float) ) ) :: GLfloat) }}
+
 -- integr' :: SF GLfloat GLfloat
 -- -- integr' = proc in -> do
 
 -- integr' = (iPre zeroVector &&& time) >>> sscan f (zeroVector, 0) >>> arr fst
 --     where f (!prevVal, !prevTime) (!val, !time) = (prevVal ^+^ (realToFrac $ time - prevTime) *^ val, time)
 
+update_player_from_keys :: SF (ParsedInput, Game) Game
+update_player_from_keys = proc (pi@(ParsedInput{ wCount, aCount, sCount, dCount }), game) -> do
+	let horiz_speed = realToFrac(dCount - aCount) :: Float
+	let vertical_speed = if (wCount > 0) then 200 else  ((realToFrac (vy $ mario $ game)) :: Float)
+	returnA -< game {mario = (mario game) {vx = ((realToFrac (horiz_speed )) :: GLfloat), vy = ((realToFrac (vertical_speed )) :: GLfloat)}}
+
+player_phsx :: SF Game Game
+player_phsx = proc game -> do
+	vert_speed <- integral -< ((realToFrac (ay $ mario $ game)) :: Float)
+	vert_movement <- integral -< vert_speed + ((realToFrac (vy $ mario $ game)) :: Float)
+	horiz_movement <- integral -< ((realToFrac (vx $ mario $ game)) :: Float)
+	let newy = ((realToFrac (vert_movement +  ((realToFrac ( y $ mario $ game)) :: Float) ) ) :: GLfloat)
+	let newx = ((realToFrac (horiz_movement + ((realToFrac ( x $ mario $ game)) :: Float) ) ) :: GLfloat)
+	returnA -< game {mario = (mario game) {y = newy , x = newx}}
+
+
+
+bounds_updater :: SF Game Game
+bounds_updater = proc game -> do
+	let sb = update_bounds_from_game game
+	let newy = if (y $ mario $ game) < (lowy sb)  then (lowy sb) else (y $ mario $ game)
+	let newy = if (y $ mario $ game) > (highy sb) then (highy sb) else (y $ mario $ game)
+	let newx = if (x $ mario $ game) < (lowx sb)  then (lowx sb) else (x $ mario $ game)
+	let newx = if (x $ mario $ game) > (highx sb) then (highx sb) else (x $ mario $ game)
+
+	let newvx = if ((newx == (highx sb)) || (newx == (lowx sb))) then 0 else (vx $ mario $ game)
+	let newvy = if ((newy == (highy sb)) || (newy == (lowy sb))) then 0 else (vy $ mario $ game)
+	returnA -< game {mario = (mario game) {y = newy , x = newx, vy = newvy , vx = newvx}}
+	where update_bounds_from_game g = StageBounds {highx = 1.0, lowx = 1.0, highy = 1.0, lowy = 1.0}
+
+-- master_combine :: SF ParsedInput Game
+-- master_combine = proc pi -> do
+-- 	rec 	g1 	<- update_player_from_keys -< (pi, cg)
+-- 			g2 	<- player_phsx -< g1
+-- 			cg 	<- dSwitch seeder bounds_updater -< g1
+-- 	returnA -< cg
+
+seeder :: SF Game (Game , Event (Bool))
+seeder = proc game -> do
+	returnA -< (initial_game, Event (True))
 
 -- mainSF = parseInput >>> update >>> draw
 initial_game = Game {mario = GameElement {x = 0.0, y = 20.0, vx = 0.0, vy = 100.0, ay = -4.0, w = 10.0, h = 20.0, col = Color3 1.0 0.0 0.0}, world = []}
 -- mainSF = constant initial_game >>> testsf  >>> draw
-mainSF = constant initial_game >>> switch testsf_with_end testsf_cont  >>> draw
+-- mainSF = constant initial_game >>> switch testsf_with_end testsf_cont  >>> draw
+mainSF = parseInput >>> move_mario initial_game >>> switch testsf_with_end testsf_cont  >>> draw
+
 mainSF1 = constant initial_game >>> testsf
 
 -- testsf_cont :: Event (Bool) -> SF Game Game
 -- testsf_cont (_) = testsf
-testsf_cont _ = testsf
+testsf_cont _ = switch testsf_with_end testsf_cont
 
 update = undefined
 
@@ -101,6 +162,11 @@ draw = arr $ (\game -> do
         flush)
         -- swapBuffers)
 
+reshape :: ReshapeCallback
+reshape size = do
+  viewport $= (Position 0 0, size)
+  postRedisplay Nothing
+
 main :: IO ()
 main = do {
 	newInputRef <- newIORef NoEvent;   -- IORef to pass keyboard event between yampa components
@@ -110,8 +176,9 @@ main = do {
      				(\_ _ b -> b >> return False) 
                     mainSF;
 	Graphics.UI.GLUT.displayCallback $= return ();
+	reshapeCallback $= Just reshape;
 	Graphics.UI.GLUT.idleCallback $= Just (idle newInputRef oldTimeRef rh);
-	-- Graphics.UI.GLUT.keyboardMouseCallback $= Just (\k ks m _ -> writeIORef newInputRef (Event $ Keyboard k ks m));
+	Graphics.UI.GLUT.keyboardMouseCallback $= Just (\k ks m _ -> writeIORef newInputRef (Event $ Keyboard k ks m));
 	oldTime' <- get elapsedTime;
     writeIORef oldTimeRef oldTime';
 	mainLoop;
