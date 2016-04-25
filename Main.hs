@@ -10,6 +10,7 @@ import Graphics.UI.GLUT hiding (Level,Vector3(..),normalize)
 import qualified Graphics.UI.GLUT as G(Vector3(..))
 import Foreign.C.Types
 import Data.IORef
+import Data.Maybe
 import Data.Time.Clock.POSIX
 import Unsafe.Coerce
 import Debug.Trace
@@ -24,7 +25,8 @@ data GameElement = GameElement {
 						ay:: GLfloat,
 						w :: GLfloat,
 						h :: GLfloat,
-						moving :: Bool,
+						moving_v :: Bool,
+						moving_h :: Bool,
 						col :: Color3 GLfloat
 					} deriving (Show)
 data PlayerBounds = PlayerBounds {
@@ -40,6 +42,7 @@ data Game = Game {
 				mario :: GameElement,
 				world :: GameScene
 			} deriving (Show)
+data Direction = Upd | Downd | Leftd | Rightd | Nodir deriving (Eq, Show)
 
 ---------------------------------- game logic -------------------------------
 myInitGL :: IO ()
@@ -66,45 +69,22 @@ idle newInput oldTime rh = do
     return ()
 
 
--- testsf :: Game -> SF () Game
--- testsf game0 = constant game0
-testsf_with_end :: SF Game (Game , Event (Bool))
-testsf_with_end = proc game -> do
-	vert_speed <- integral -< ((realToFrac (ay $ mario $ game)) :: Float)
-	vert_movement <- integral -< vert_speed + ((realToFrac (vy $ mario $ game)) :: Float)
-	-- newy <- ((realToFrac (vert_movement + ((realToFrac ( y $ mario $ game)) :: Float) ) ) :: GLfloat)
-	-- ev <- NoEvent
-	let newy = ((realToFrac (vert_movement + ((realToFrac ( y $ mario $ game)) :: Float) ) ) :: GLfloat)
-	-- ev <- edge -< newy <= 0
-	let ev = if ( newy > 0) then NoEvent else Event (True) 
-	returnA -< (game {mario = (mario game) {y = newy }}, ev ) 
-	-- returnA -< (game {mario = (mario game) {y = ((realToFrac (vert_movement + ((realToFrac ( y $ mario $ game)) :: Float) ) ) :: GLfloat) }}, if ( ((realToFrac (vert_movement + ((realToFrac ( y $ mario $ game)) :: Float) ) ) :: GLfloat) > 0) then NoEvent else Event () ) 
-	-- where newy = ((realToFrac (vert_movement + ((realToFrac ( 0.0)) :: Float) ) ) :: GLfloat)
-	-- where newy = ((realToFrac (vert_movement + ((realToFrac ( y $ mario $ game)) :: Float) ) ) :: GLfloat)
-		  -- ev = if (1 > 0) then NoEvent else Event ()
-	-- where x = newy
+-- testsf_with_end :: SF Game (Game , Event (Bool))
+-- testsf_with_end = proc game -> do
+-- 	vert_speed <- integral -< ((realToFrac (ay $ mario $ game)) :: Float)
+-- 	vert_movement <- integral -< vert_speed + ((realToFrac (vy $ mario $ game)) :: Float)
+-- 	let newy = ((realToFrac (vert_movement + ((realToFrac ( y $ mario $ game)) :: Float) ) ) :: GLfloat)
+-- 	let ev = if ( newy > 0) then NoEvent else Event (True) 
+-- 	returnA -< (game {mario = (mario game) {y = newy }}, ev ) 
 
 
 
-testsf :: SF Game Game
--- testsf = arr (\g->g)
-testsf = proc game -> do
-	vert_speed <- integral -< ((realToFrac (ay $ mario $ game)) :: Float)
-	vert_movement <- integral -< vert_speed + ((realToFrac (vy $ mario $ game)) :: Float)
-	returnA -< game {mario = (mario game) {y = ((realToFrac (vert_movement + ((realToFrac ( y $ mario $ game)) :: Float) ) ) :: GLfloat) }}
+-- testsf :: SF Game Game
+-- testsf = proc game -> do
+-- 	vert_speed <- integral -< ((realToFrac (ay $ mario $ game)) :: Float)
+-- 	vert_movement <- integral -< vert_speed + ((realToFrac (vy $ mario $ game)) :: Float)
+-- 	returnA -< game {mario = (mario game) {y = ((realToFrac (vert_movement + ((realToFrac ( y $ mario $ game)) :: Float) ) ) :: GLfloat) }}
 
--- move_mario :: Game -> SF ParsedInput Game
--- -- testsf = arr (\g->g)
--- move_mario game = proc pi@(ParsedInput{ wEvs, aEvs, sEvs, dEvs }) -> do
--- 	-- vert_speed <- integral -< ((realToFrac (ay $ mario $ game)) :: Float)
--- 	let horiz_movement = 15 * realToFrac(dEvs - aEvs) :: Float
--- 	returnA -< game {mario = (mario game) {x = ((realToFrac (horiz_movement + ((realToFrac ( x $ mario $ game)) :: Float) ) ) :: GLfloat) }}
-
--- integr' :: SF GLfloat GLfloat
--- -- integr' = proc in -> do
-
--- integr' = (iPre zeroVector &&& time) >>> sscan f (zeroVector, 0) >>> arr fst
---     where f (!prevVal, !prevTime) (!val, !time) = (prevVal ^+^ (realToFrac $ time - prevTime) *^ val, time)
 
 -- Snapping integral 
 integral_1 = (iPre 0 &&& time) >>> sscan f (0, 0) >>> arr fst
@@ -141,10 +121,10 @@ update_player_from_keys = proc (i_pi@(ParsedInput{ wEvs, aEvs, sEvs, dEvs }), i_
 				| (not is_d && is_a) = -10
 				| (not is_d && not is_a) = 0
 				| (is_d && is_a) = 0
-	let vertical_speed = if (is_w && not (moving $ mario $ game)) then 50.0 else  (vy $ mario $ game)
-	let new_moving = if (is_w && not (moving $ mario $ game)) then True else (moving $ mario $ game)
-	let new_ay = if new_moving then -4.0 else (ay $ mario $ game)
-	let po_game = game {mario = (mario game) {vx = ((realToFrac (horiz_speed )) :: GLfloat), vy = ((realToFrac (vertical_speed )) :: GLfloat), moving = new_moving, ay = new_ay }}
+	let vertical_speed = if (is_w && not (moving_v $ mario $ game)) then 50.0 else  (vy $ mario $ game)
+	let new_moving_v = if (is_w && not (moving_v $ mario $ game)) then True else (moving_v $ mario $ game)
+	let new_ay = if new_moving_v then -4.0 else (ay $ mario $ game)
+	let po_game = game {mario = (mario game) {vx = ((realToFrac (horiz_speed )) :: GLfloat), vy = ((realToFrac (vertical_speed )) :: GLfloat), moving_v = new_moving_v, ay = new_ay }}
 	let o_game = if update_player_from_keys_logging then (trace ("In update_player_from_keys output: " ++ "\n" ++ show po_game ++ "\n") po_game) else po_game
 	returnA -< o_game
 
@@ -152,7 +132,7 @@ player_phsx :: SF Game Game
 player_phsx = proc game -> do
 	vert_speed <- integral_1 -< ((realToFrac (ay $ mario $ game)) :: Float)
 	vert_movement <- integral_1 -< vert_speed + ((realToFrac (vy $ mario $ game)) :: Float)
-	horiz_movement <- integral_2 -< ((realToFrac (vx $ mario $ game)) :: Float)
+	horiz_movement <- integral_1 -< ((realToFrac (vx $ mario $ game)) :: Float)
 	let newvy = ((realToFrac (vert_speed +  ((realToFrac ( vy $ mario $ game)) :: Float) ) ) :: GLfloat)
 	let newy = ((realToFrac (vert_movement +  ((realToFrac ( y $ mario $ game)) :: Float) ) ) :: GLfloat)
 	let newx = ((realToFrac (horiz_movement + ((realToFrac ( x $ mario $ game)) :: Float) ) ) :: GLfloat)
@@ -160,54 +140,107 @@ player_phsx = proc game -> do
 
 player_update = update_player_from_keys >>> player_phsx
 
-bounds_updater ::SF Game Game
-bounds_updater = proc game -> do
+bounds_updater :: SF (Game, Game) Game
+bounds_updater = proc (game, prev_game) -> do
 	let sb = update_bounds_from_game game
 
 	let new_y = if (y $ mario $ game) < (lowy sb)  then (lowy sb) else (if (y $ mario $ game) > (highy sb) then (highy sb) else (y $ mario $ game) )
 	let new_ay = if (y $ mario $ game) < (lowy sb) then 0.0 else (ay $ mario $ game)
-	let new_moving = if (y $ mario $ game) < (lowy sb) then False else (moving $ mario $ game)
-	let new_vy = if not new_moving then 0 else (if new_y == (highy sb) then 0 else (vy $ mario $ game) )
+	let new_moving_v = if (y $ mario $ game) < (lowy sb) then False else (moving_v $ mario $ game)
+	let new_vy = if not new_moving_v then 0 else (if new_y == (highy sb) then 0 else (vy $ mario $ game) )
 	-- let newy = if (y $ mario $ game) > (highy sb) then (highy sb) else (y $ mario $ game)
 
 	let new_x = if (x $ mario $ game) < (lowx sb)  then (lowx sb) else ( if (x $ mario $ game) > (highx sb) then (highx sb) else (x $ mario $ game) )
 
 	-- let new_vx = if ((new_x == (highx sb)) || (new_x == (lowx sb))) then 0 else (vx $ mario $ game)
 	-- let newvy = if ((newy == (highy sb)) || (newy == (lowy sb))) then 0 else (vy $ mario $ game)
-	returnA -< game {mario = (mario game) {y = new_y , x = new_x, vx = 0, vy = new_vy , ay = new_ay, moving = new_moving}}
-	-- where update_bounds_from_game g = PlayerBounds {highx = 1000.0, lowx = 0.0, highy = 1000.0, lowy = 0.0}
+	returnA -< game {mario = (mario game) {y = new_y , x = new_x, vx = 0, vy = new_vy , ay = new_ay, moving_v = new_moving_v}}
+	where update_bounds_from_game g = PlayerBounds {highx = 1000.0, lowx = 0.0, highy = 1000.0, lowy = 0.0}
 
 
 update_bounds_from_game :: Game -> PlayerBounds
 update_bounds_from_game g = PlayerBounds {
-								 highx = minimum $ map (\ge -> (x ge)) $ filter (\ge -> ((x ge) >  (x $ mario g)) && ((y ge) - (h ge) / 2 < (y $ mario g)) && ((y ge) + (h ge) / 2 > (y $ mario g)) ) (world g)
-								,lowx  = maximum $ map (\ge -> (x ge)) $ filter (\ge -> ((x ge) <= (x $ mario g)) && ((y ge) - (h ge) / 2 < (y $ mario g)) && ((y ge) + (h ge) / 2 > (y $ mario g)) ) (world g)
-								,highy = minimum $ map (\ge -> (y ge)) $ filtewr (\ge -> ((y ge) >  (y $ mario g)) && ((x ge) - (w ge) / 2 < (x $ mario g)) && ((x ge) + (w ge) / 2 > (x $ mario g)) ) (world g)
-								,lowy  = maximum $ map (\ge -> (y ge)) $ filter (\ge -> ((y ge) <= (y $ mario g)) && ((x ge) - (w ge) / 2 < (x $ mario g)) && ((x ge) + (w ge) / 2 > (x $ mario g)) ) (world g)
-							}
--- update_bounds_from_game :: Game -> PlayerBounds
--- update_bounds_from_game g = let hbx = minimum $ map (\ge -> (x ge)) $ filter (\ge -> ((x ge) > (x $ mario g)) && ((y ge) - (h ge) / 2 < (y $ mario g)) && ((y ge) + (h ge) / 2 > (y $ mario g)) ) (world g)
--- 								lbx = maximum $ map (\ge -> (x ge)) $ filter (\ge -> ((x ge) < (x $ mario g)) && ((y ge) - (h ge) / 2 < (y $ mario g)) && ((y ge) + (h ge) / 2 > (y $ mario g)) ) (world g)
--- 								hby = minimum $ map (\ge -> (y ge)) $ filter (\ge -> ((y ge) > (y $ mario g)) && ((x ge) - (w ge) / 2 < (x $ mario g)) && ((x ge) + (w ge) / 2 > (x $ mario g)) ) (world g)
--- 								lby = maximum $ map (\ge -> (y ge)) $ filter (\ge -> ((y ge) < (y $ mario g)) && ((x ge) - (w ge) / 2 < (x $ mario g)) && ((x ge) + (w ge) / 2 > (x $ mario g)) ) (world g)
--- 								-- in PlayerBounds {highx = hbx, lowx = 0, highy = 0, lowy = 0}
--- 								in PlayerBounds {highx = hbx, lowx = lbx, highy = hby, lowy = lby}
+							 highx = minimum $ map (\ge -> (x ge)) $ filter (\ge -> ((x ge) >  (x $ mario g)) && ((y ge) - (h ge) / 2 < (y $ mario g)) && ((y ge) + (h ge) / 2 > (y $ mario g)) ) (world g)
+							,lowx  = maximum $ map (\ge -> (x ge)) $ filter (\ge -> ((x ge) <= (x $ mario g)) && ((y ge) - (h ge) / 2 < (y $ mario g)) && ((y ge) + (h ge) / 2 > (y $ mario g)) ) (world g)
+							,highy = minimum $ map (\ge -> (y ge)) $ filter (\ge -> ((y ge) >  (y $ mario g)) && ((x ge) - (w ge) / 2 < (x $ mario g)) && ((x ge) + (w ge) / 2 > (x $ mario g)) ) (world g)
+							,lowy  = maximum $ map (\ge -> (y ge)) $ filter (\ge -> ((y ge) <= (y $ mario g)) && ((x ge) - (w ge) / 2 < (x $ mario g)) && ((x ge) + (w ge) / 2 > (x $ mario g)) ) (world g)
+						}
+
+collision_detector :: SF (Game, Game) Game
+collision_detector = proc (game, prev_game) -> do
+	let (coll_x, coll_y, coll_dir) = detect_player_collisions (mario prev_game) (mario game) (world game)
+	let new_y = if ((elem Upd coll_dir) || (elem Downd coll_dir)) then coll_y else (y $ mario $ game)
+	let new_ay = if (elem Downd coll_dir) then 0.0 else (ay $ mario $ game)
+	let new_moving_v = if (elem Downd coll_dir) then False else (moving_v $ mario $ game)
+	let new_vy = if not new_moving_v then 0 else (if (elem Upd coll_dir) then 0 else (vy $ mario $ game) )
+	let new_x = if ((elem Leftd coll_dir)  || (elem Rightd coll_dir)) then coll_x else (x $ mario $ game)
+	returnA -< game {mario = (mario game) {y = new_y , x = new_x, vx = 0, vy = new_vy , ay = new_ay, moving_v = new_moving_v}}
+
+-- return ax + by + c form of a line from 2 points defining it
+epsilon = 1 / 1000000
+line x1 y1 x2 y2 = 
+	let 	a = if (abs (y1 - y2) < epsilon) then 0 else 1
+		b = if (abs (y1 - y2) < epsilon) then 1 else if (abs (x1 - x2) < epsilon) then 0 else (x1 - x2)/(y2 - y1)
+		c = if (abs (y1 - y2) < epsilon) then (-y1) else if (abs (x1 - x2) < epsilon) then (-x1) else (x1 * y2 - x2 * y1) / (y1 -y2)
+	in (a, b, c)
+
+between a b c = (a <= b ) && (b <= c)
+
+segment_intersect_log = False
+segment_intersect x1i y1i x2i y2i u1i v1i u2i v2i = 
+	let 	(x1, y1, x2, y2, u1, v1, u2, v2) = if (segment_intersect_log && y1i <= 20 && y1i >= (-20)) then (trace ("In segment_intersect 1: " ++ "\n" ++ show (x1i, y1i, x2i, y2i, u1i, v1i, u2i, v2i) ++ "\n") (x1i, y1i, x2i, y2i, u1i, v1i, u2i, v2i)) else (x1i, y1i, x2i, y2i, u1i, v1i, u2i, v2i)
+		(a1, b1, c1) = if (segment_intersect_log && y1i <= 20 && y1i >= (-20)) then (trace ("In segment_intersect 2: " ++ "\n" ++ show (line x1 y1 x2 y2) ++ "\n") (line x1 y1 x2 y2)) else (line x1 y1 x2 y2)
+		(a2, b2, c2) = if (segment_intersect_log && y1i <= 20 && y1i >= (-20)) then (trace ("In segment_intersect 3: " ++ "\n" ++ show (line u1 v1 u2 v2) ++ "\n") (line u1 v1 u2 v2)) else (line u1 v1 u2 v2)
+		(ix, iy) = case (a1, b1, c1, a2, b2, c2) of
+				( 0,  _,  _,  0,  _,  _) -> (Nothing, Nothing)
+				( _,  0,  _,  _,  0,  _) -> (Nothing, Nothing)
+				( 0,  _,  _,  _,  0,  _) -> if (between x1 (-c2/a2) x2) && (between v1 (-c1/b1) v2) then (Just (-c2/a2),Just (-c1/b1)) else (Nothing, Nothing)
+				( _,  0,  _,  0,  _,  _) -> if (between u1 (-c1/a1) u2) && (between y1 (-c2/b2) y2) then (Just (-c1/a1),Just (-c2/b2)) else (Nothing, Nothing)
+				( 0,  _,  _,  _,  _,  _) -> if (between x1 ( (b2*c1-b1*c2)/(b1*a2) ) x2) then (Just ( (b2*c1-b1*c2)/(b1*a2) ), Just (-c1/b1)) else (Nothing, Nothing)
+				( _,  0,  _,  _,  _,  _) -> if (between y1 ( (a2*c1-a1*c2)/(b2*a1) ) y2) then (Just (-c1/a1), Just( (a2*c1-a1*c2)/(b2*a1) ) ) else (Nothing, Nothing)
+				( _,  _,  _,  0,  _,  _) -> if (between u1 ( (b1*c2-b2*c1)/(b2*a1) ) u2) then (Just ( (b1*c2-b2*c1)/(b2*a1) ), Just (-c2/b2)) else (Nothing, Nothing)
+				( _,  _,  _,  _,  0,  _) -> if (between v1 ( (a1*c2-a2*c1)/(b1*a2) ) v2) then (Just (-c2/a2), Just( (a1*c2-a2*c1)/(b1*a2) ) ) else (Nothing, Nothing)
+		(l_ix, l_iy) = if (segment_intersect_log && y1i <= 20 && y1i >= (-20)) then (trace ("In segment_intersect 4: " ++ "\n" ++ show ix ++ " " ++ show iy ++ "\n") (ix, iy)) else (ix, iy)
+	in (l_ix, l_iy)
+
+collision_logging = False
+detect_player_collisions :: GameElement -> GameElement -> GameScene -> (GLfloat, GLfloat, [Direction])
+detect_player_collisions prev_mario mario world =
+	let 	m_world = map (\ge -> ge { w = (w ge) + (w mario), h = (h ge) + (h mario)}) world
+		collisions1 = map (collide_player_with_rectangle prev_mario mario) m_world
+		collisions2 = if collision_logging then (trace ("In detect_player_collisions input: " ++ "\n" ++ show collisions1 ++ "\n") collisions1) else collisions1
+		collisions3 = filter (\(x,y,coll_dir) -> coll_dir /= Nodir) collisions2
+		(fx, fy, fDirs) = foldl dir_fold (0, 0, [Nodir]) collisions3
+	in (fx, fy, fDirs)
+
+dir_fold :: (GLfloat, GLfloat, [Direction]) -> (GLfloat, GLfloat, Direction) -> (GLfloat, GLfloat, [Direction])
+dir_fold (ax, ay, dirs) (x, y, coll_dir) =
+		case (x, y, coll_dir) of
+			(_, _, Upd)    -> (ax, y, dirs ++ [Upd])
+			(_, _, Downd)  -> (ax, y, dirs ++ [Downd])
+			(_, _, Leftd)  -> (x, ay, dirs ++ [Leftd])
+			(_, _, Rightd) -> (x, ay, dirs ++ [Rightd])
+
+collide_player_with_rectangle prev_mario mario platform = 
+	let 	(ux, uy) = segment_intersect (x prev_mario) (y prev_mario) (x mario) (y mario) ((x platform) - ((w platform)/2)) ((y platform) + ((h platform)/2)) ((x platform) + ((w platform)/2)) ((y platform) + ((h platform)/2))
+	 	(dx, dy) = segment_intersect (x prev_mario) (y prev_mario) (x mario) (y mario) ((x platform) - ((w platform)/2)) ((y platform) - ((h platform)/2)) ((x platform) + ((w platform)/2)) ((y platform) - ((h platform)/2))
+	 	(lx, ly) = segment_intersect (x prev_mario) (y prev_mario) (x mario) (y mario) ((x platform) - ((w platform)/2)) ((y platform) + ((h platform)/2)) ((x platform) - ((w platform)/2)) ((y platform) - ((h platform)/2))
+	 	(rx, ry) = segment_intersect (x prev_mario) (y prev_mario) (x mario) (y mario) ((x platform) + ((w platform)/2)) ((y platform) + ((h platform)/2)) ((x platform) + ((w platform)/2)) ((y platform) - ((h platform)/2))
+	 	(ix, iy, coll_dir) = 	if ( (ux, uy) /= (Nothing, Nothing) && (y prev_mario) > ((y platform) + ((h platform)/2)) ) then (fromJust ux, fromJust uy, Upd) else
+	 				if ( (dx, dy) /= (Nothing, Nothing) && (y prev_mario) < ((y platform) - ((h platform)/2)) ) then (fromJust dx, fromJust dy, Downd) else
+	 				if ( (lx, ly) /= (Nothing, Nothing) && (x prev_mario) < ((x platform) - ((w platform)/2)) ) then (fromJust lx, fromJust ly, Leftd) else	
+	 				if ( (rx, ry) /= (Nothing, Nothing) && (x prev_mario) > ((x platform) + ((w platform)/2)) ) then (fromJust rx, fromJust ry, Rightd) else
+	 				(0 ,0 , Nodir)
+	in (ix, iy, coll_dir)	
 
 master_combine :: SF ParsedInput Game
 master_combine = proc pi -> do
-	-- rec cgg <- (player_update >>> (dSwitch seeder bounds_updater) >>> iPre initial_game) -< (pi, cgg)
-	rec cgg <- player_update >>> (initial_game --> bounds_updater) >>> iPre initial_game -< (pi, cgg)
-	-- rec cgg <- player_update >>> (initial_game --> bounds_updater) >>> delay 0.1 initial_game -< (pi, cgg)
-	-- rec gg2 <- dSwitch seeder bounds_updater -< gg1
-		-- cgg <- pre -< gg2
-		-- gg1 <- update_player_from_keys -< (pi, cgg)
-		-- gg2 <- returnA -< gg1
-			-- g2 	<- player_phsx -< g1
-		-- cgg <- returnA -< gg2
-		
-		-- cgg <- pre -< gg2
-	-- returnA -< gg1
-	returnA -< cgg
+	rec 
+		g_pu 	<- player_update -< (pi, g_bu_d)
+		g_bu 	<- (initial_game --> collision_detector) -< (g_pu, g_bu_d)
+		-- g_bu 	<- (initial_game --> bounds_updater) -< (g_pu, g_bu_d)
+		g_bu_d	<- iPre initial_game -< g_bu
+	returnA -< g_bu
 
 seeder :: SF Game (Game , Event (Bool))
 seeder = proc game -> do
@@ -215,14 +248,14 @@ seeder = proc game -> do
 
 
 -- mainSF = parseInput >>> update >>> draw
-initial_game = Game {mario =   GameElement {x = 0.0, y = 0.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 10.0, h = 20.0, moving = False, col = Color3 1.0 0.0 0.0}, 
-	                 world = [ GameElement {x = 500.0, y = -2.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 1002.0, h = 1.0, moving = False, col = Color3 0.0 1.0 0.0}
-	                 		  ,GameElement {x = 500.0, y = 1000.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 1002.0, h = 1.0, moving = False, col = Color3 0.0 1.0 0.0}
-	                 		  ,GameElement {x = -2.0, y = 500.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 1.0, h = 1002.0, moving = False, col = Color3 0.0 1.0 0.0}
-	                 		  ,GameElement {x = 1000.0, y = 500.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 1.0, h = 1002.0, moving = False, col = Color3 0.0 1.0 0.0}
-	                 		  ,GameElement {x = 300.0, y = 200.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 100.0, h = 20.0, moving = False, col = Color3 0.0 1.0 1.0}
-	                 		  ,GameElement {x = 600.0, y = 400.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 100.0, h = 20.0, moving = False, col = Color3 0.0 1.0 1.0}
-	                 		  ,GameElement {x = 900.0, y = 600.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 100.0, h = 20.0, moving = False, col = Color3 0.0 1.0 1.0}
+initial_game = Game {mario =   GameElement {x = 100.0, y = 100.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 10.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 1.0 0.0 0.0}, 
+	                 world = [ GameElement {x = 500.0, y = -2.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 1002.0, h = 10.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 0.0}
+	                 		  ,GameElement {x = 500.0, y = 1000.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 1002.0, h = 10.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 0.0}
+	                 		  ,GameElement {x = -2.0, y = 500.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 10.0, h = 1002.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 0.0}
+	                 		  ,GameElement {x = 1000.0, y = 500.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 10.0, h = 1002.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 0.0}
+	                 		  ,GameElement {x = 300.0, y = 200.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 100.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 1.0}
+	                 		  ,GameElement {x = 600.0, y = 400.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 100.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 1.0}
+	                 		  ,GameElement {x = 900.0, y = 600.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 100.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 1.0}
 	                 		  ]
 	                 }
 -- mainSF = constant initial_game >>> testsf  >>> draw
@@ -230,11 +263,11 @@ initial_game = Game {mario =   GameElement {x = 0.0, y = 0.0, vx = 0.0, vy = 0.0
 -- mainSF = parseInput >>> move_mario initial_game >>> switch testsf_with_end testsf_cont  >>> draw
 mainSF = parseInput >>> master_combine >>> draw
 
-mainSF1 = constant initial_game >>> testsf
+-- mainSF1 = constant initial_game >>> testsf
 
 -- testsf_cont :: Event (Bool) -> SF Game Game
 -- testsf_cont (_) = testsf
-testsf_cont _ = switch testsf_with_end testsf_cont
+-- testsf_cont _ = switch testsf_with_end testsf_cont
 
 update = undefined
 
@@ -252,19 +285,19 @@ reshape size = do
 
 main :: IO ()
 main = do {
-	newInputRef <- newIORef NoEvent;   -- IORef to pass keyboard event between yampa components
-    oldTimeRef  <- newIORef (0 :: Int); -- IORef to pass time delta between yampa components
+		newInputRef <- newIORef NoEvent;   -- IORef to pass keyboard event between yampa components
+    		oldTimeRef  <- newIORef (0 :: Int); -- IORef to pass time delta between yampa components
 
-    rh <- reactInit (myInitGL >> return NoEvent) 
+    		rh <- reactInit (myInitGL >> return NoEvent) 
      				(\_ _ b -> b >> return False) 
-                    mainSF;
-	Graphics.UI.GLUT.displayCallback $= return ();
-	reshapeCallback $= Just reshape;
-	Graphics.UI.GLUT.idleCallback $= Just (idle newInputRef oldTimeRef rh);
-	Graphics.UI.GLUT.keyboardMouseCallback $= Just (\k ks m _ -> writeIORef newInputRef (Event $ Keyboard k ks m));
-	oldTime' <- get elapsedTime;
-    writeIORef oldTimeRef oldTime';
-	mainLoop;
+     				mainSF;
+		Graphics.UI.GLUT.displayCallback $= return ();
+		reshapeCallback $= Just reshape;
+		Graphics.UI.GLUT.idleCallback $= Just (idle newInputRef oldTimeRef rh);
+		Graphics.UI.GLUT.keyboardMouseCallback $= Just (\k ks m _ -> writeIORef newInputRef (Event $ Keyboard k ks m));
+		oldTime' <- get elapsedTime;
+    		writeIORef oldTimeRef oldTime';
+		mainLoop;
 	}
 
 color3f r g b = color $ Color3 r g (b :: GLfloat)
@@ -317,7 +350,7 @@ data ParsedInput =
 
 -- Event Definition:
 filterKeyDowns :: SF (Event Input) (Event Input)
-filterKeyDowns = arr $ filterE ((==Down) . keyState)
+filterKeyDowns = arr $ filterE ((== Down ) . keyState)
 
 keyIntegral :: Double -> SF (Event a) Double
 keyIntegral a = let eventToSpeed (Event _) = a
