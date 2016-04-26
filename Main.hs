@@ -186,20 +186,29 @@ line x1 y1 x2 y2 =
 
 between a b c = (a <= b ) && (b <= c)
 
-segment_intersect_log = False
+segment_intersect_log = True
+segment_intersect :: GLfloat -> GLfloat->  GLfloat -> GLfloat -> GLfloat -> GLfloat -> GLfloat -> GLfloat -> (Maybe GLfloat, Maybe GLfloat)
 segment_intersect x1i y1i x2i y2i u1i v1i u2i v2i = 
 	let 	(x1, y1, x2, y2, u1, v1, u2, v2) = if (segment_intersect_log && y1i <= 20 && y1i >= (-20)) then (trace ("In segment_intersect 1: " ++ "\n" ++ show (x1i, y1i, x2i, y2i, u1i, v1i, u2i, v2i) ++ "\n") (x1i, y1i, x2i, y2i, u1i, v1i, u2i, v2i)) else (x1i, y1i, x2i, y2i, u1i, v1i, u2i, v2i)
 		(a1, b1, c1) = if (segment_intersect_log && y1i <= 20 && y1i >= (-20)) then (trace ("In segment_intersect 2: " ++ "\n" ++ show (line x1 y1 x2 y2) ++ "\n") (line x1 y1 x2 y2)) else (line x1 y1 x2 y2)
 		(a2, b2, c2) = if (segment_intersect_log && y1i <= 20 && y1i >= (-20)) then (trace ("In segment_intersect 3: " ++ "\n" ++ show (line u1 v1 u2 v2) ++ "\n") (line u1 v1 u2 v2)) else (line u1 v1 u2 v2)
-		(ix, iy) = case (a1, b1, c1, a2, b2, c2) of
-				( 0,  _,  _,  0,  _,  _) -> (Nothing, Nothing)
-				( _,  0,  _,  _,  0,  _) -> (Nothing, Nothing)
-				( 0,  _,  _,  _,  0,  _) -> if (between x1 (-c2/a2) x2) && (between v1 (-c1/b1) v2) then (Just (-c2/a2),Just (-c1/b1)) else (Nothing, Nothing)
-				( _,  0,  _,  0,  _,  _) -> if (between u1 (-c1/a1) u2) && (between y1 (-c2/b2) y2) then (Just (-c1/a1),Just (-c2/b2)) else (Nothing, Nothing)
-				( 0,  _,  _,  _,  _,  _) -> if (between x1 ( (b2*c1-b1*c2)/(b1*a2) ) x2) then (Just ( (b2*c1-b1*c2)/(b1*a2) ), Just (-c1/b1)) else (Nothing, Nothing)
-				( _,  0,  _,  _,  _,  _) -> if (between y1 ( (a2*c1-a1*c2)/(b2*a1) ) y2) then (Just (-c1/a1), Just( (a2*c1-a1*c2)/(b2*a1) ) ) else (Nothing, Nothing)
-				( _,  _,  _,  0,  _,  _) -> if (between u1 ( (b1*c2-b2*c1)/(b2*a1) ) u2) then (Just ( (b1*c2-b2*c1)/(b2*a1) ), Just (-c2/b2)) else (Nothing, Nothing)
-				( _,  _,  _,  _,  0,  _) -> if (between v1 ( (a1*c2-a2*c1)/(b1*a2) ) v2) then (Just (-c2/a2), Just( (a1*c2-a2*c1)/(b1*a2) ) ) else (Nothing, Nothing)
+		-- (ix, iy) = case (a1, b1, c1, a2, b2, c2) of
+		-- 		( 0,  _,  _,  0,  _,  _) -> (Nothing, Nothing)
+		-- 		( _,  0,  _,  _,  0,  _) -> (Nothing, Nothing)
+		-- 		( 0,  _,  _,  _,  0,  _) -> if (between x1 (-c2/a2) x2) && (between v1 (-c1/b1) v2) then (Just (-c2/a2),Just (-c1/b1)) else (Nothing, Nothing)
+		-- 		( _,  0,  _,  0,  _,  _) -> if (between u1 (-c1/a1) u2) && (between y1 (-c2/b2) y2) then (Just (-c1/a1),Just (-c2/b2)) else (Nothing, Nothing)
+		-- 		( 0,  _,  _,  _,  _,  _) -> if (between x1 ( (b2*c1-b1*c2)/(b1*a2) ) x2) then (Just ( (b2*c1-b1*c2)/(b1*a2) ), Just (-c1/b1)) else (Nothing, Nothing)
+		-- 		( _,  0,  _,  _,  _,  _) -> if (between y1 ( (a2*c1-a1*c2)/(b2*a1) ) y2) then (Just (-c1/a1), Just( (a2*c1-a1*c2)/(b2*a1) ) ) else (Nothing, Nothing)
+		-- 		( _,  _,  _,  0,  _,  _) -> if (between u1 ( (b1*c2-b2*c1)/(b2*a1) ) u2) then (Just ( (b1*c2-b2*c1)/(b2*a1) ), Just (-c2/b2)) else (Nothing, Nothing)
+		-- 		( _,  _,  _,  _,  0,  _) -> if (between v1 ( (a1*c2-a2*c1)/(b1*a2) ) v2) then (Just (-c2/a2), Just( (a1*c2-a2*c1)/(b1*a2) ) ) else (Nothing, Nothing)
+		(ix, iy) = 	if ( (a1 == 0 && a2 == 0) || (b1 == 0 && b2 == 0) ) then (Nothing :: Maybe GLfloat, Nothing :: Maybe GLfloat) else
+				if (a1 == 0 && b2 == 0) then (if (between x1 (-c2/a2) x2) && (between v1 (-c1/b1) v2) then (Just (-c2/a2),Just (-c1/b1)) else (Nothing, Nothing)) else (Nothing :: Maybe GLfloat, Nothing :: Maybe GLfloat)
+				-- if (b1 == 0 && a2 == 0) then (if (between u1 (-c1/a1) u2) && (between y1 (-c2/b2) y2) then (Just (-c1/a1),Just (-c2/b2)) else (Nothing, Nothing)) else
+				-- if (a1 == 0) 		then (if (between x1 ( (b2*c1-b1*c2)/(b1*a2) ) x2) then (Just ( (b2*c1-b1*c2)/(b1*a2) ), Just (-c1/b1)) else (Nothing, Nothing)) else
+				-- if (b1 == 0) 		then (if (between y1 ( (a2*c1-a1*c2)/(b2*a1) ) y2) then (Just (-c1/a1), Just( (a2*c1-a1*c2)/(b2*a1) ) ) else (Nothing, Nothing)) else
+				-- if (a2 == 0) 		then (if (between u1 ( (b1*c2-b2*c1)/(b2*a1) ) u2) then (Just ( (b1*c2-b2*c1)/(b2*a1) ), Just (-c2/b2)) else (Nothing, Nothing)) else
+				-- if (b2 == 0) 		then (if (between v1 ( (a1*c2-a2*c1)/(b1*a2) ) v2) then (Just (-c2/a2), Just( (a1*c2-a2*c1)/(b1*a2) ) ) else (Nothing, Nothing))
+		-- (ix, iy) = (Nothing :: Maybe GLfloat, Nothing :: Maybe GLfloat)
 		(l_ix, l_iy) = if (segment_intersect_log && y1i <= 20 && y1i >= (-20)) then (trace ("In segment_intersect 4: " ++ "\n" ++ show ix ++ " " ++ show iy ++ "\n") (ix, iy)) else (ix, iy)
 	in (l_ix, l_iy)
 
