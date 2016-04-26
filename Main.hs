@@ -132,7 +132,7 @@ player_phsx :: SF Game Game
 player_phsx = proc game -> do
 	vert_speed <- integral_1 -< ((realToFrac (ay $ mario $ game)) :: Float)
 	vert_movement <- integral_1 -< vert_speed + ((realToFrac (vy $ mario $ game)) :: Float)
-	horiz_movement <- integral_1 -< ((realToFrac (vx $ mario $ game)) :: Float)
+	horiz_movement <- integral_2 -< ((realToFrac (vx $ mario $ game)) :: Float)
 	let newvy = ((realToFrac (vert_speed +  ((realToFrac ( vy $ mario $ game)) :: Float) ) ) :: GLfloat)
 	let newy = ((realToFrac (vert_movement +  ((realToFrac ( y $ mario $ game)) :: Float) ) ) :: GLfloat)
 	let newx = ((realToFrac (horiz_movement + ((realToFrac ( x $ mario $ game)) :: Float) ) ) :: GLfloat)
@@ -165,15 +165,18 @@ update_bounds_from_game g = PlayerBounds {
 							,highy = minimum $ map (\ge -> (y ge)) $ filter (\ge -> ((y ge) >  (y $ mario g)) && ((x ge) - (w ge) / 2 < (x $ mario g)) && ((x ge) + (w ge) / 2 > (x $ mario g)) ) (world g)
 							,lowy  = maximum $ map (\ge -> (y ge)) $ filter (\ge -> ((y ge) <= (y $ mario g)) && ((x ge) - (w ge) / 2 < (x $ mario g)) && ((x ge) + (w ge) / 2 > (x $ mario g)) ) (world g)
 						}
-
+collision_detector_logging = False
 collision_detector :: SF (Game, Game) Game
 collision_detector = proc (game, prev_game) -> do
-	let (coll_x, coll_y, coll_dir) = detect_player_collisions (mario prev_game) (mario game) (world game)
+	let (collx, colly, colldir) = detect_player_collisions (mario prev_game) (mario game) (world game)
+        let (coll_x, coll_y, coll_dir) = if collision_detector_logging then (trace ("In collision_detector : " ++ "\n" ++ show (collx, colly, colldir) ++ "\n") (collx, colly, colldir)) else (collx, colly, colldir)
 	let new_y = if ((elem Upd coll_dir) || (elem Downd coll_dir)) then coll_y else (y $ mario $ game)
-	let new_ay = if (elem Downd coll_dir) then 0.0 else (ay $ mario $ game)
-	let new_moving_v = if (elem Downd coll_dir) then False else (moving_v $ mario $ game)
+        let new_ay = (ay $ mario $ game)
+	-- let new_ay = if (elem Downd coll_dir) then 0.0 else (ay $ mario $ game)
+        let new_moving_v = if (elem Downd coll_dir) then False else True
+	-- let new_moving_v = if (elem Downd coll_dir) then False else (moving_v $ mario $ game)
 	let new_vy = if not new_moving_v then 0 else (if (elem Upd coll_dir) then 0 else (vy $ mario $ game) )
-	let new_x = if ((elem Leftd coll_dir)  || (elem Rightd coll_dir)) then coll_x else (x $ mario $ game)
+	let new_x = if ((elem Leftd coll_dir) || (elem Rightd coll_dir)) then coll_x else (x $ mario $ game)
 	returnA -< game {mario = (mario game) {y = new_y , x = new_x, vx = 0, vy = new_vy , ay = new_ay, moving_v = new_moving_v}}
 
 -- return ax + by + c form of a line from 2 points defining it
@@ -184,14 +187,14 @@ line x1 y1 x2 y2 =
 		c = if (abs (y1 - y2) < epsilon) then (-y1) else if (abs (x1 - x2) < epsilon) then (-x1) else (x1 * y2 - x2 * y1) / (y1 -y2)
 	in (a, b, c)
 
-between a b c = (a <= b ) && (b <= c)
+between a b c = ((a <= b ) && (b <= c)) || ((a >= b) && (b >= c))
 
-segment_intersect_log = True
+segment_intersect_log = False
 segment_intersect :: GLfloat -> GLfloat->  GLfloat -> GLfloat -> GLfloat -> GLfloat -> GLfloat -> GLfloat -> (Maybe GLfloat, Maybe GLfloat)
 segment_intersect x1i y1i x2i y2i u1i v1i u2i v2i = 
-	let 	(x1, y1, x2, y2, u1, v1, u2, v2) = if (segment_intersect_log && y1i <= 20 && y1i >= (-20)) then (trace ("In segment_intersect 1: " ++ "\n" ++ show (x1i, y1i, x2i, y2i, u1i, v1i, u2i, v2i) ++ "\n") (x1i, y1i, x2i, y2i, u1i, v1i, u2i, v2i)) else (x1i, y1i, x2i, y2i, u1i, v1i, u2i, v2i)
-		(a1, b1, c1) = if (segment_intersect_log && y1i <= 20 && y1i >= (-20)) then (trace ("In segment_intersect 2: " ++ "\n" ++ show (line x1 y1 x2 y2) ++ "\n") (line x1 y1 x2 y2)) else (line x1 y1 x2 y2)
-		(a2, b2, c2) = if (segment_intersect_log && y1i <= 20 && y1i >= (-20)) then (trace ("In segment_intersect 3: " ++ "\n" ++ show (line u1 v1 u2 v2) ++ "\n") (line u1 v1 u2 v2)) else (line u1 v1 u2 v2)
+	let 	(x1, y1, x2, y2, u1, v1, u2, v2) = if (segment_intersect_log && y1i <= 20 && y1i >= (-20)) then (trace ("In segment_intersect coordinates: " ++ "\n" ++ show (x1i, y1i, x2i, y2i, u1i, v1i, u2i, v2i) ++ "\n") (x1i, y1i, x2i, y2i, u1i, v1i, u2i, v2i)) else (x1i, y1i, x2i, y2i, u1i, v1i, u2i, v2i)
+		(a1, b1, c1) = if (segment_intersect_log && y1i <= 20 && y1i >= (-20)) then (trace ("In segment_intersect line 1: " ++ "\n" ++ show (line x1 y1 x2 y2) ++ "\n") (line x1 y1 x2 y2)) else (line x1 y1 x2 y2)
+		(a2, b2, c2) = if (segment_intersect_log && y1i <= 20 && y1i >= (-20)) then (trace ("In segment_intersect line 2: " ++ "\n" ++ show (line u1 v1 u2 v2) ++ "\n") (line u1 v1 u2 v2)) else (line u1 v1 u2 v2)
 		-- (ix, iy) = case (a1, b1, c1, a2, b2, c2) of
 		-- 		( 0,  _,  _,  0,  _,  _) -> (Nothing, Nothing)
 		-- 		( _,  0,  _,  _,  0,  _) -> (Nothing, Nothing)
@@ -202,14 +205,14 @@ segment_intersect x1i y1i x2i y2i u1i v1i u2i v2i =
 		-- 		( _,  _,  _,  0,  _,  _) -> if (between u1 ( (b1*c2-b2*c1)/(b2*a1) ) u2) then (Just ( (b1*c2-b2*c1)/(b2*a1) ), Just (-c2/b2)) else (Nothing, Nothing)
 		-- 		( _,  _,  _,  _,  0,  _) -> if (between v1 ( (a1*c2-a2*c1)/(b1*a2) ) v2) then (Just (-c2/a2), Just( (a1*c2-a2*c1)/(b1*a2) ) ) else (Nothing, Nothing)
 		(ix, iy) = 	if ( (a1 == 0 && a2 == 0) || (b1 == 0 && b2 == 0) ) then (Nothing :: Maybe GLfloat, Nothing :: Maybe GLfloat) else
-				if (a1 == 0 && b2 == 0) then (if (between x1 (-c2/a2) x2) && (between v1 (-c1/b1) v2) then (Just (-c2/a2),Just (-c1/b1)) else (Nothing, Nothing)) else (Nothing :: Maybe GLfloat, Nothing :: Maybe GLfloat)
-				-- if (b1 == 0 && a2 == 0) then (if (between u1 (-c1/a1) u2) && (between y1 (-c2/b2) y2) then (Just (-c1/a1),Just (-c2/b2)) else (Nothing, Nothing)) else
-				-- if (a1 == 0) 		then (if (between x1 ( (b2*c1-b1*c2)/(b1*a2) ) x2) then (Just ( (b2*c1-b1*c2)/(b1*a2) ), Just (-c1/b1)) else (Nothing, Nothing)) else
-				-- if (b1 == 0) 		then (if (between y1 ( (a2*c1-a1*c2)/(b2*a1) ) y2) then (Just (-c1/a1), Just( (a2*c1-a1*c2)/(b2*a1) ) ) else (Nothing, Nothing)) else
-				-- if (a2 == 0) 		then (if (between u1 ( (b1*c2-b2*c1)/(b2*a1) ) u2) then (Just ( (b1*c2-b2*c1)/(b2*a1) ), Just (-c2/b2)) else (Nothing, Nothing)) else
-				-- if (b2 == 0) 		then (if (between v1 ( (a1*c2-a2*c1)/(b1*a2) ) v2) then (Just (-c2/a2), Just( (a1*c2-a2*c1)/(b1*a2) ) ) else (Nothing, Nothing))
+				if (a1 == 0 && b2 == 0) then (if (between x1 (-c2/a2) x2) && (between v1 (-c1/b1) v2) then (Just (-c2/a2),Just (-c1/b1)) else (Nothing, Nothing)) else
+				if (b1 == 0 && a2 == 0) then (if (between u1 (-c1/a1) u2) && (between y1 (-c2/b2) y2) then (Just (-c1/a1),Just (-c2/b2)) else (Nothing, Nothing)) else 
+				if (a1 == 0) 		then (if (between x1 ( (b2*c1-b1*c2)/(b1*a2) ) x2) && (between v1 (-c1/b1) v2) then (Just ( (b2*c1-b1*c2)/(b1*a2) ), Just (-c1/b1)) else (Nothing, Nothing)) else
+				if (b1 == 0) 		then (if (between y1 ( (a2*c1-a1*c2)/(b2*a1) ) y2) && (between u1 (-c1/a1) u2) then (Just (-c1/a1), Just( (a2*c1-a1*c2)/(b2*a1) ) ) else (Nothing, Nothing)) else
+				if (a2 == 0) 		then (if (between u1 ( (b1*c2-b2*c1)/(b2*a1) ) u2) && (between y1 (-c2/b2) y2) then (Just ( (b1*c2-b2*c1)/(b2*a1) ), Just (-c2/b2)) else (Nothing, Nothing)) else
+				if (b2 == 0) 		then (if (between v1 ( (a1*c2-a2*c1)/(b1*a2) ) v2) && (between x1 (-c2/a2) x2) then (Just (-c2/a2), Just( (a1*c2-a2*c1)/(b1*a2) ) ) else (Nothing, Nothing)) else (Nothing :: Maybe GLfloat, Nothing :: Maybe GLfloat)
 		-- (ix, iy) = (Nothing :: Maybe GLfloat, Nothing :: Maybe GLfloat)
-		(l_ix, l_iy) = if (segment_intersect_log && y1i <= 20 && y1i >= (-20)) then (trace ("In segment_intersect 4: " ++ "\n" ++ show ix ++ " " ++ show iy ++ "\n") (ix, iy)) else (ix, iy)
+		(l_ix, l_iy) = if (segment_intersect_log && y1i <= 20 && y1i >= (-20)) then (trace ("In segment_intersect intersection: " ++ "\n" ++ show ix ++ " " ++ show iy ++ "\n") (ix, iy)) else (ix, iy)
 	in (l_ix, l_iy)
 
 collision_logging = False
@@ -217,9 +220,11 @@ detect_player_collisions :: GameElement -> GameElement -> GameScene -> (GLfloat,
 detect_player_collisions prev_mario mario world =
 	let 	m_world = map (\ge -> ge { w = (w ge) + (w mario), h = (h ge) + (h mario)}) world
 		collisions1 = map (collide_player_with_rectangle prev_mario mario) m_world
-		collisions2 = if collision_logging then (trace ("In detect_player_collisions input: " ++ "\n" ++ show collisions1 ++ "\n") collisions1) else collisions1
+		collisions2 = if (collision_logging && (y mario) <= 20 && (y mario) >= (-20)) then (trace ("In detect_player_collisions raw collisions: " ++ "\n" ++ show collisions1 ++ "\n") collisions1) else collisions1
 		collisions3 = filter (\(x,y,coll_dir) -> coll_dir /= Nodir) collisions2
-		(fx, fy, fDirs) = foldl dir_fold (0, 0, [Nodir]) collisions3
+                collisions4 = if (collision_logging && (y mario) <= 20 && (y mario) >= (-20)) then (trace ("In detect_player_collisions filtered: " ++ "\n" ++ show collisions3 ++ "\n") collisions3) else collisions3
+		-- (fx, fy, fDirs) = foldl dir_fold (0 , 0 , [Nodir]) collisions4
+                (fx, fy, fDirs) = if (collision_logging && (y mario) <= 20 && (y mario) >= (-20)) then (trace ("In detect_player_collisions folded: " ++ "\n" ++ show (foldl dir_fold (0 , 0 , [Nodir]) collisions4) ++ "\n") (foldl dir_fold (0 , 0 , [Nodir]) collisions4)) else (foldl dir_fold (0 , 0 , [Nodir]) collisions4)
 	in (fx, fy, fDirs)
 
 dir_fold :: (GLfloat, GLfloat, [Direction]) -> (GLfloat, GLfloat, Direction) -> (GLfloat, GLfloat, [Direction])
@@ -235,11 +240,10 @@ collide_player_with_rectangle prev_mario mario platform =
 	 	(dx, dy) = segment_intersect (x prev_mario) (y prev_mario) (x mario) (y mario) ((x platform) - ((w platform)/2)) ((y platform) - ((h platform)/2)) ((x platform) + ((w platform)/2)) ((y platform) - ((h platform)/2))
 	 	(lx, ly) = segment_intersect (x prev_mario) (y prev_mario) (x mario) (y mario) ((x platform) - ((w platform)/2)) ((y platform) + ((h platform)/2)) ((x platform) - ((w platform)/2)) ((y platform) - ((h platform)/2))
 	 	(rx, ry) = segment_intersect (x prev_mario) (y prev_mario) (x mario) (y mario) ((x platform) + ((w platform)/2)) ((y platform) + ((h platform)/2)) ((x platform) + ((w platform)/2)) ((y platform) - ((h platform)/2))
-	 	(ix, iy, coll_dir) = 	if ( (ux, uy) /= (Nothing, Nothing) && (y prev_mario) > ((y platform) + ((h platform)/2)) ) then (fromJust ux, fromJust uy, Upd) else
-	 				if ( (dx, dy) /= (Nothing, Nothing) && (y prev_mario) < ((y platform) - ((h platform)/2)) ) then (fromJust dx, fromJust dy, Downd) else
-	 				if ( (lx, ly) /= (Nothing, Nothing) && (x prev_mario) < ((x platform) - ((w platform)/2)) ) then (fromJust lx, fromJust ly, Leftd) else	
-	 				if ( (rx, ry) /= (Nothing, Nothing) && (x prev_mario) > ((x platform) + ((w platform)/2)) ) then (fromJust rx, fromJust ry, Rightd) else
-	 				(0 ,0 , Nodir)
+	 	(ix, iy, coll_dir) = 	if ( (ux, uy) /= (Nothing, Nothing) && (y prev_mario) >= ((y platform) + ((h platform)/2)) && (y prev_mario) > (y mario)) then (fromJust ux, fromJust uy, Downd) else
+	 				if ( (dx, dy) /= (Nothing, Nothing) && (y prev_mario) <= ((y platform) - ((h platform)/2)) && (y prev_mario) < (y mario)) then (fromJust dx, fromJust dy, Upd) else
+	 				if ( (lx, ly) /= (Nothing, Nothing) && (x prev_mario) <= ((x platform) - ((w platform)/2)) && (x prev_mario) < (x mario)) then (fromJust lx, fromJust ly, Rightd) else	
+	 				if ( (rx, ry) /= (Nothing, Nothing) && (x prev_mario) >= ((x platform) + ((w platform)/2)) && (x prev_mario) > (x mario)) then (fromJust rx, fromJust ry, Leftd) else (0 ,0 , Nodir)
 	in (ix, iy, coll_dir)	
 
 master_combine :: SF ParsedInput Game
@@ -257,7 +261,7 @@ seeder = proc game -> do
 
 
 -- mainSF = parseInput >>> update >>> draw
-initial_game = Game {mario =   GameElement {x = 100.0, y = 100.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 10.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 1.0 0.0 0.0}, 
+initial_game = Game {mario =   GameElement {x = 100.0, y = 100.0, vx = 0.0, vy = 0.0, ay = -4.0, w = 10.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 1.0 0.0 0.0}, 
 	                 world = [ GameElement {x = 500.0, y = -2.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 1002.0, h = 10.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 0.0}
 	                 		  ,GameElement {x = 500.0, y = 1000.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 1002.0, h = 10.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 0.0}
 	                 		  ,GameElement {x = -2.0, y = 500.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 10.0, h = 1002.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 0.0}
