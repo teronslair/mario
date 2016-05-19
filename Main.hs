@@ -105,8 +105,8 @@ myInitGL = do
         _window <- Graphics.UI.GLUT.createWindow "Mario";
         return ();      
 
-idle :: IORef (Event Input) -> IORef POSIXTime -> 
-        ReactHandle (Event Input) (IO ()) -> IO ()
+idle :: IORef (ActivatedKeys) -> IORef POSIXTime -> 
+        ReactHandle (ActivatedKeys) (IO ()) -> IO ()
 idle newInput oldTime rh = do 
     newInput' <- readIORef newInput
     -- newTime'  <- get elapsedTime
@@ -116,7 +116,8 @@ idle newInput oldTime rh = do
     let dt = ((realToFrac newTime') - (realToFrac oldTime'))
     -- let dt = trace ("In idle: " ++ show dt_ ++ "\n") dt_
     -- let dt = ((fromIntegral ( newTime' - oldTime')))
-    _ <- if (dt > 0.03) then do 
+    -- _ <- if (dt > 0.03) then do 
+    _ <- if (dt > 0.016) then do 
     -- _ <- if (dt > 0.1) then do 
                                                         -- secs <$> time_ (react rh (dt, Just newInput')) >>= print
                                                         react rh (dt, Just newInput')
@@ -142,12 +143,17 @@ integral_2 = (iPre 0 &&& FRP.Yampa.time) >>> sscan f (0, 0) >>> arr fst
                 ((realToFrac $ time - prevTime) * val, time)
 
 update_player_from_keys_logging = False
-update_player_from_keys :: SF (ParsedInput, Game) Game
-update_player_from_keys = proc (i_pi@(ParsedInput{ wEvs, aEvs, sEvs, dEvs }), i_game) -> do
+-- update_player_from_keys :: SF (ParsedInput, Game) Game
+update_player_from_keys :: SF (ActivatedKeys, Game) Game
+-- update_player_from_keys = proc (i_pi@(ParsedInput{ wEvs, aEvs, sEvs, dEvs }), i_game) -> do
+update_player_from_keys = proc (i_pi@(ActivatedKeys{ wPressed, aPressed, dPressed }), i_game) -> do
 
-        let there_is_a = isEvent aEvs
-        let there_is_d = isEvent dEvs
-        let there_is_w = isEvent wEvs
+        let there_is_a = aPressed
+        -- let there_is_a = isEvent aEvs
+        let there_is_d = dPressed
+        -- let there_is_d = isEvent dEvs
+        let there_is_w = wPressed
+        -- let there_is_w = isEvent wEvs
         let key_col = [there_is_a, there_is_d, there_is_w]
 
         let game = if update_player_from_keys_logging then (trace ("In update_player_from_keys input: " ++ "\n" ++ show i_game ++ "\n") i_game) else i_game
@@ -168,7 +174,7 @@ player_phsx :: SF Game Game
 player_phsx = proc game -> do
         vert_speed <- integral_1 -< ((realToFrac (ay $ mario $ game)) :: Float)
         vert_movement <- integral_1 -< vert_speed + ((realToFrac (vy $ mario $ game)) :: Float)
-        horiz_movement <- integral_2 -< ((realToFrac (vx $ mario $ game)) :: Float)
+        horiz_movement <- integral_1 -< ((realToFrac (vx $ mario $ game)) :: Float)
         let newvy = ((realToFrac (vert_speed +  ((realToFrac ( vy $ mario $ game)) :: Float) ) ) :: GLfloat)
         let newy = ((realToFrac (vert_movement +  ((realToFrac ( y $ mario $ game)) :: Float) ) ) :: GLfloat)
         let newx = ((realToFrac (horiz_movement + ((realToFrac ( x $ mario $ game)) :: Float) ) ) :: GLfloat)
@@ -266,7 +272,7 @@ collide_player_with_rectangle prev_mario mario platform =
                                         if ( (rx, ry) /= (Nothing, Nothing) && (x prev_mario) >= ((x platform) + ((w platform)/2)) && (x prev_mario) > (x mario)) then (fromJust rx, fromJust ry, Leftd) else (0 ,0 , Nodir)
         in (ix, iy, coll_dir)   
 
-master_combine :: SF ParsedInput Game
+master_combine :: SF ActivatedKeys Game
 master_combine = proc pi -> do
         rec 
                 g_pu    <- player_update -< (pi, g_bu_d)
@@ -304,20 +310,35 @@ reshape size = do
   viewport $= (Position 0 0, size)
   postRedisplay Nothing
 
+updateIORefWith :: Key -> KeyState -> ActivatedKeys -> ActivatedKeys
+updateIORefWith k ks activatedKeys = 
+        let     a_is_pressed = if (k == (Char 'a')) then (ks == Down) else (aPressed activatedKeys)
+                w_is_pressed = if (k == (Char 'w')) then (ks == Down) else (wPressed activatedKeys)
+                d_is_pressed = if (k == (Char 'd')) then (ks == Down) else (dPressed activatedKeys)
+        in ActivatedKeys {wPressed = w_is_pressed, aPressed = a_is_pressed, dPressed = d_is_pressed}
+
+animate :: IO ()
+animate = do
+    postRedisplay Nothing
+    addTimerCallback 16 $ animate 
+
 main :: IO ()
 main = do {
-                newInputRef <- newIORef NoEvent;   -- IORef to pass keyboard event between yampa components
+                newInputRef <- newIORef ActivatedKeys {wPressed = False, aPressed = False, dPressed = False};   -- IORef to pass keyboard event between yampa components
                 oldTimeRef  <- newIORef (0 :: POSIXTime); -- IORef to pass time delta between yampa components
                 -- oldTimeRef  <- newIORef (0 :: Int); -- IORef to pass time delta between yampa components
 
-                rh <- reactInit (myInitGL >> return NoEvent) 
+                -- rh <- reactInit (myInitGL >> return NoEvent) 
+                rh <- reactInit (myInitGL >> readIORef newInputRef) 
                                 (\_ _ b -> b >> return False) 
                                 mainSF;
-                Graphics.UI.GLUT.displayCallback $= return ();
+                Graphics.UI.GLUT.displayCallback $= (idle newInputRef oldTimeRef rh);
                 reshapeCallback $= Just reshape;
-                Graphics.UI.GLUT.idleCallback $= Just (idle newInputRef oldTimeRef rh);
-                Graphics.UI.GLUT.keyboardMouseCallback $= Just (\k ks m _ -> writeIORef newInputRef (Event $ Keyboard k ks m));
+                -- Graphics.UI.GLUT.idleCallback $= Just (idle newInputRef oldTimeRef rh);
+                -- Graphics.UI.GLUT.keyboardMouseCallback $= Just (\k ks m _ -> writeIORef newInputRef (Event $ Keyboard k ks m));
+                Graphics.UI.GLUT.keyboardMouseCallback $= Just (\k ks m _ -> modifyIORef' newInputRef $ updateIORefWith k ks);
                 actionOnWindowClose $= MainLoopReturns;
+                addTimerCallback 16 $ animate;
                 -- oldTime' <- get elapsedTime;
                 oldTime' <- getPOSIXTime;
                 writeIORef oldTimeRef oldTime';
@@ -365,6 +386,11 @@ data ParsedInput =
                   sEvs :: Event Input, dEvs :: Event Input,
                   upEvs  :: Event Input, downEvs :: Event Input, 
                   rightEvs :: Event Input, leftEvs :: Event Input }
+data ActivatedKeys = ActivatedKeys {
+                                        wPressed :: Bool,
+                                        aPressed :: Bool,
+                                        dPressed :: Bool
+                                } deriving (Eq,Show);
 
 
 -- Event Definition:
@@ -378,19 +404,22 @@ keyIntegral a = let eventToSpeed (Event _) = a
 
                        
 -- Input
-parseInput :: SF (Event Input) ParsedInput
+parseInput :: SF ActivatedKeys ActivatedKeys
 parseInput = proc i -> do
-    down   <- filterKeyDowns                  -< i
-    wEvs   <- senseKey 'w'                    -< down
-    aEvs   <- senseKey 'a'                    -< down
-    sEvs   <- senseKey 's'                    -< down
-    dEvs   <- senseKey 'd'                    -< down
-    upEvs    <- filterKey (SpecialKey KeyUp)    -< down
-    downEvs  <- filterKey (SpecialKey KeyDown)  -< down
-    rightEvs <- filterKey (SpecialKey KeyRight) -< down
-    leftEvs  <- filterKey (SpecialKey KeyLeft)  -< down
-    returnA -< ParsedInput wEvs aEvs sEvs dEvs 
-                           upEvs downEvs rightEvs leftEvs
-    where countKey c  = filterE ((==(Char c)) . key) ^>> keyIntegral 1
-          senseKey c = arr $ filterE ((==(Char c)) . key)
-          filterKey k = arr $ filterE ((==k) . key)
+        returnA -< i
+-- parseInput :: SF (Event Input) ParsedInput
+-- parseInput = proc i -> do
+--     down   <- filterKeyDowns                  -< i
+--     wEvs   <- senseKey 'w'                    -< down
+--     aEvs   <- senseKey 'a'                    -< down
+--     sEvs   <- senseKey 's'                    -< down
+--     dEvs   <- senseKey 'd'                    -< down
+--     upEvs    <- filterKey (SpecialKey KeyUp)    -< down
+--     downEvs  <- filterKey (SpecialKey KeyDown)  -< down
+--     rightEvs <- filterKey (SpecialKey KeyRight) -< down
+--     leftEvs  <- filterKey (SpecialKey KeyLeft)  -< down
+--     returnA -< ParsedInput wEvs aEvs sEvs dEvs 
+--                            upEvs downEvs rightEvs leftEvs
+--     where countKey c  = filterE ((==(Char c)) . key) ^>> keyIntegral 1
+--           senseKey c = arr $ filterE ((==(Char c)) . key)
+--           filterKey k = arr $ filterE ((==k) . key)
