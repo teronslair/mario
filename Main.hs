@@ -94,7 +94,8 @@ type GameScene = [ GameElement ]
 
 data Game = Game {
                                 mario :: GameElement,
-                                world :: GameScene
+                                world :: GameScene,
+                                screen_offset :: GLfloat
                         } deriving (Show)
 data Direction = Upd | Downd | Leftd | Rightd | Nodir deriving (Eq, Show)
 
@@ -272,28 +273,44 @@ collide_player_with_rectangle prev_mario mario platform =
                                         if ( (rx, ry) /= (Nothing, Nothing) && (x prev_mario) >= ((x platform) + ((w platform)/2)) && (x prev_mario) > (x mario)) then (fromJust rx, fromJust ry, Leftd) else (0 ,0 , Nodir)
         in (ix, iy, coll_dir)   
 
+world_logging = True
+world_constructor :: SF Game Game
+world_constructor = proc i_game -> do
+        let new_offset_ = if (x $ mario $ i_game) > 800 then ((screen_offset $ i_game) + ((x $ mario $ i_game) - 800)) else (if (x $ mario $ i_game) < 200 then ((screen_offset $ i_game) + ((x $ mario $ i_game) - 200)) else (screen_offset $ i_game))
+        let new_offset = if world_logging then (trace ("Screen offset "++ show new_offset_ ++"\n") new_offset_) else new_offset_
+        let new_mario_x = if (x $ mario $ i_game) > 800 then 800 else (if (x $ mario $ i_game) < 200 then 200 else (x $ mario $ i_game))
+        let new_world = if (new_offset /= (screen_offset i_game)) then (map (\ge -> ge {x = (x $ ge) - new_offset}) (world $ initial_game)) else (world $ i_game)
+        returnA -< i_game {mario = (mario i_game) {x = new_mario_x}, screen_offset = new_offset, world = new_world}
+
 master_combine :: SF ActivatedKeys Game
 master_combine = proc pi -> do
         rec 
-                g_pu    <- player_update -< (pi, g_bu_d)
-                g_bu    <- (initial_game --> collision_detector) -< (g_pu, g_bu_d)
-                g_bu_d  <- iPre initial_game -< g_bu
-        returnA -< g_bu
+                g_pu    <- player_update -< (pi, g_wc_d)
+                g_cd    <- (initial_game --> collision_detector) -< (g_pu, g_wc_d)
+                g_wc    <- world_constructor -< g_cd
+                g_wc_d  <- iPre initial_game -< g_wc
+        returnA -< g_wc
 
 seeder :: SF Game (Game , Event (Bool))
 seeder = proc game -> do
         returnA -< (initial_game, Event (True))
 
 
-initial_game = Game {mario =   GameElement {x = 100.0, y = 100.0, vx = 0.0, vy = 0.0, ay = -901.0, w = 10.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 1.0 0.0 0.0}, 
+initial_game = Game {mario =   GameElement {x = 300.0, y = 100.0, vx = 0.0, vy = 0.0, ay = -901.0, w = 10.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 1.0 0.0 0.0}, 
                          world = [ GameElement {x = 500.0, y = -2.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 1002.0, h = 10.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 0.0}
                                           ,GameElement {x = 500.0, y = 1000.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 1002.0, h = 10.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 0.0}
                                           ,GameElement {x = -2.0, y = 500.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 10.0, h = 1002.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 0.0}
-                                          ,GameElement {x = 1000.0, y = 500.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 10.0, h = 1002.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 0.0}
+                                          ,GameElement {x = 2500.0, y = 500.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 10.0, h = 1002.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 0.0}
                                           ,GameElement {x = 300.0, y = 200.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 100.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 1.0}
                                           ,GameElement {x = 600.0, y = 400.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 100.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 1.0}
                                           ,GameElement {x = 900.0, y = 600.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 100.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 1.0}
-                                          ]
+                                          ,GameElement {x = 1200.0, y = 300.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 100.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 1.0}
+                                          ,GameElement {x = 1500.0, y = 100.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 100.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 1.0}
+                                          ,GameElement {x = 1800.0, y = 200.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 100.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 1.0}
+                                          ,GameElement {x = 2100.0, y = 400.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 100.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 1.0}
+                                          ,GameElement {x = 2400.0, y = 600.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 100.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 0.5 0.5 1.0}
+                                          ],
+                                screen_offset = 0.0
                          }
 mainSF = parseInput >>> master_combine >>> draw
 
