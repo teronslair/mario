@@ -95,6 +95,7 @@ type GameScene = [ GameElement ]
 data Game = Game {
                                 mario :: GameElement,
                                 world :: GameScene,
+                                -- enemies :: GameScene,
                                 screen_offset :: GLfloat
                         } deriving (Show)
 data Direction = Upd | Downd | Leftd | Rightd | Nodir deriving (Eq, Show)
@@ -181,7 +182,29 @@ player_phsx = proc game -> do
         let newx = ((realToFrac (horiz_movement + ((realToFrac ( x $ mario $ game)) :: Float) ) ) :: GLfloat)
         returnA -< game {mario = (mario game) {y = newy , x = newx, vy = newvy}}
 
+type Enemy_SF_Input = (GameElement, Game)
+
+update_player_from_script :: SF Enemy_SF_Input Game
+update_player_from_script = undefined
+
+
+-- based on the [Game] output of all SFs will determine wich SFs (indexed in list) have managed to simulate their player out of the screen and
+-- based on the current stat of the Game will determine wich SFs need to be created to support newly entered active objects (in the screen)
+-- so output of function is Event ([Indexes_to_be_removed],[Indetifiers_of_objects_to_be_added])  
+activate_deactivate_threads :: SF (Enemy_SF_Input,[Game]) (Event ([Int], [Int]))
+activate_deactivate_threads = undefined
+
 player_update = update_player_from_keys >>> player_phsx
+enemy_update = update_player_from_script >>> player_phsx
+
+enemy_threads_manager_cont :: [SF Enemy_SF_Input Game] -> ([Int], [Int]) -> SF Enemy_SF_Input [Game]
+enemy_threads_manager_cont enemy_SF_list (enemies_to_deact, enemies_to_act) =
+        let     new_enemy_SF_list_1 = if (length enemies_to_deact) > 0 then (deactivate_enemies $ enemies_to_deact $ enemy_SF_list) else enemy_SF_list
+                new_enemy_SF_list_2 = if (length enemies_to_deact) > 0 then (activate_enemies enemies_to_act new_enemy_SF_list_1) else new_enemy_SF_list_1
+        in  pSwitchB new_enemy_SF_list_2 activate_deactivate_threads enemy_threads_manager_cont
+
+enemy_threads_manager = pSwitchB [] activate_deactivate_threads enemy_threads_manager_cont
+
 
 bounds_updater :: SF (Game, Game) Game
 bounds_updater = proc (game, prev_game) -> do
@@ -296,8 +319,8 @@ seeder = proc game -> do
         returnA -< (initial_game, Event (True))
 
 
-initial_game = Game {mario =   GameElement {x = 300.0, y = 100.0, vx = 0.0, vy = 0.0, ay = -901.0, w = 10.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 1.0 0.0 0.0}, 
-                         world = [ GameElement {x = 500.0, y = -2.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 1002.0, h = 10.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 0.0}
+initial_game = Game {            mario =   GameElement {x = 300.0, y = 100.0, vx = 0.0, vy = 0.0, ay = -901.0, w = 10.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 1.0 0.0 0.0} 
+                                ,world = [ GameElement {x = 500.0, y = -2.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 1002.0, h = 10.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 0.0}
                                           ,GameElement {x = 500.0, y = 1000.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 1002.0, h = 10.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 0.0}
                                           ,GameElement {x = -2.0, y = 500.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 10.0, h = 1002.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 0.0}
                                           ,GameElement {x = 2500.0, y = 500.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 10.0, h = 1002.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 0.0}
@@ -309,8 +332,8 @@ initial_game = Game {mario =   GameElement {x = 300.0, y = 100.0, vx = 0.0, vy =
                                           ,GameElement {x = 1800.0, y = 200.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 100.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 1.0}
                                           ,GameElement {x = 2100.0, y = 400.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 100.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 1.0}
                                           ,GameElement {x = 2400.0, y = 600.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 100.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 0.5 0.5 1.0}
-                                          ],
-                                screen_offset = 0.0
+                                          ,GameElement {x = 500.0, y = 20.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 10.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 1.0 1.0 0.0}]
+                                ,screen_offset = 0.0
                          }
 mainSF = parseInput >>> master_combine >>> draw
 
@@ -389,6 +412,7 @@ displayGame myGame = do
         if displayGame_logging then print "Display" >> print myGame else return ()
         (renderPrimitive Quads) (renderGameElement (mario myGame))
         foldl (\a x -> a >> x) (return ()) (map (renderPrimitive Quads) (map renderGameElement (world myGame) ))
+        -- foldl (\a x -> a >> x) (return ()) (map (renderPrimitive Quads) (map renderGameElement (enemies myGame) ))
         flush
 
 
