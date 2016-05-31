@@ -10,6 +10,7 @@ import Graphics.UI.GLUT hiding (Level,Vector3(..),normalize)
 import qualified Graphics.UI.GLUT as G(Vector3(..))
 import Foreign.C.Types
 import Data.IORef
+import Data.List
 import Data.Maybe
 import Data.Time.Clock.POSIX
 import Data.Time.Clock
@@ -81,7 +82,8 @@ data GameElement = GameElement {
                                                 h :: GLfloat,
                                                 moving_v :: Bool,
                                                 moving_h :: Bool,
-                                                col :: Color3 GLfloat
+                                                col :: Color3 GLfloat,
+                                                uid :: GameElementIdentifier
                                         } deriving (Show)
 data PlayerBounds = PlayerBounds {
                                                 highx :: GLfloat,
@@ -90,6 +92,7 @@ data PlayerBounds = PlayerBounds {
                                                 lowy :: GLfloat
                                         } deriving (Show)
 
+type GameElementIdentifier = Int
 type GameScene = [ GameElement ]
 
 data Game = Game {
@@ -185,26 +188,66 @@ player_phsx = proc game -> do
 type Enemy_SF_Input = (GameElement, Game)
 
 update_player_from_script :: SF Enemy_SF_Input Game
-update_player_from_script = undefined
+update_player_from_script = proc fi -> do
+        let (mario_i, enemy_game) = fi
+        let horiz_speed
+                        | ((x $ mario_i)  > (x $ mario $ enemy_game)) = 100
+                        | ((x $ mario_i)  < (x $ mario $ enemy_game)) = (-100)
+                        | ((x $ mario_i) == (x $ mario $ enemy_game)) = 0
+        let o_enemy_game = enemy_game {mario = (mario enemy_game) {vx = ((realToFrac (horiz_speed )) :: GLfloat)}}
+        returnA -< o_enemy_game
 
 
 -- based on the [Game] output of all SFs will determine wich SFs (indexed in list) have managed to simulate their player out of the screen and
 -- based on the current stat of the Game will determine wich SFs need to be created to support newly entered active objects (in the screen)
 -- so output of function is Event ([Indexes_to_be_removed],[Indetifiers_of_objects_to_be_added])  
-activate_deactivate_threads :: SF (Enemy_SF_Input,[Game]) (Event ([Int], [Int]))
-activate_deactivate_threads = undefined
+pSwitchB_test_activate_deactivate_threads :: SF (Enemy_SF_Input,[Game]) (Event ([Bool], [GameElementIdentifier], Game))
+pSwitchB_test_activate_deactivate_threads = proc ((mario,mario_world), enemy_worlds) -> do
+        returnA -< Event([True],[0],mario_world)
+
+-- first_only =  arr (\(a,b) -> a)
+-- second_only = arr (\(a,b) -> b)
+
+
+enemy_SF_constructor :: Game -> SF Enemy_SF_Input Game
+enemy_SF_constructor reference_game =
+        let enemy_initial_game = reference_game
+        in (proc (mario, mario_game) -> do
+                rec 
+                        g_pu    <- enemy_update -< (mario, g_wc_d)
+                        g_cd    <- (enemy_initial_game --> collision_detector) -< (g_pu, g_wc_d)
+                        g_wc    <- world_constructor -< g_cd
+                        g_wc_d  <- iPre enemy_initial_game -< g_wc
+                returnA -< g_wc)
 
 player_update = update_player_from_keys >>> player_phsx
 enemy_update = update_player_from_script >>> player_phsx
 
-enemy_threads_manager_cont :: [SF Enemy_SF_Input Game] -> ([Int], [Int]) -> SF Enemy_SF_Input [Game]
-enemy_threads_manager_cont enemy_SF_list (enemies_to_deact, enemies_to_act) =
-        let     new_enemy_SF_list_1 = if (length enemies_to_deact) > 0 then (deactivate_enemies $ enemies_to_deact $ enemy_SF_list) else enemy_SF_list
-                new_enemy_SF_list_2 = if (length enemies_to_deact) > 0 then (activate_enemies enemies_to_act new_enemy_SF_list_1) else new_enemy_SF_list_1
-        in  pSwitchB new_enemy_SF_list_2 activate_deactivate_threads enemy_threads_manager_cont
+-- deactivate_enemies enemies_to_keep enemy_SF_list = undefined
 
-enemy_threads_manager = pSwitchB [] activate_deactivate_threads enemy_threads_manager_cont
+-- deactivate_enemies enemies_to_keep enemy_SF_list = map fromJust $ filter (/=Nothing) $ zipWith (\a b -> if a then Just b else Nothing) enemies_to_keep enemy_SF_list
+deactivate_enemies enemies_to_keep enemy_SF_list = map (\(a,b)->b) $ filter (\(a,b)-> a == True) $ zipWith (\a b -> (a,b)) enemies_to_keep enemy_SF_list
 
+activate_enemies [] enemies_already_active base_game = []
+activate_enemies enemies_to_add enemies_already_active base_game = 
+        let     enemy_game = base_game {mario = fromJust $ find (\ge -> if (uid ge) == (head enemies_to_add) then True else False) (world base_game)}
+                new_enemy_sf = enemy_SF_constructor enemy_game
+        in      activate_enemies (tail enemies_to_add) (enemies_already_active ++ [new_enemy_sf]) base_game
+
+pSwitchB_K_enemy_threads_manager_cont :: [SF Enemy_SF_Input Game] -> ([Bool], [GameElementIdentifier], Game) -> SF Enemy_SF_Input [Game]
+pSwitchB_K_enemy_threads_manager_cont enemy_SF_list (enemies_to_keep, enemies_to_act, base_game) =
+        let     new_enemy_SF_list_1 = deactivate_enemies enemies_to_keep enemy_SF_list
+                new_enemy_SF_list_2 = activate_enemies enemies_to_act new_enemy_SF_list_1 base_game
+        in  pSwitchB new_enemy_SF_list_2 pSwitchB_test_activate_deactivate_threads pSwitchB_K_enemy_threads_manager_cont
+
+enemy_threads_manager = pSwitchB [] pSwitchB_test_activate_deactivate_threads pSwitchB_K_enemy_threads_manager_cont
+
+game_splitter :: SF Game Enemy_SF_Input
+game_splitter  = proc i_game -> do
+        returnA -< (mario i_game, i_game)
+
+game_unifier :: SF ([Game], GameElement) Game
+game_unifier = undefined
 
 bounds_updater :: SF (Game, Game) Game
 bounds_updater = proc (game, prev_game) -> do
@@ -308,31 +351,34 @@ world_constructor = proc i_game -> do
 master_combine :: SF ActivatedKeys Game
 master_combine = proc pi -> do
         rec 
-                g_pu    <- player_update -< (pi, g_wc_d)
-                g_cd    <- (initial_game --> collision_detector) -< (g_pu, g_wc_d)
+                g_pu    <- player_update -< (pi, g_wu_d)
+                g_cd    <- (initial_game --> collision_detector) -< (g_pu, g_wu_d)
                 g_wc    <- world_constructor -< g_cd
-                g_wc_d  <- iPre initial_game -< g_wc
-        returnA -< g_wc
+                g_spl   <- game_splitter -< g_wc
+                g_etm   <- enemy_threads_manager -< g_spl
+                g_wu    <- game_unifier -< (g_etm,mario g_wc)
+                g_wu_d  <- iPre initial_game -< g_wu
+        returnA -< g_wu
 
 seeder :: SF Game (Game , Event (Bool))
 seeder = proc game -> do
         returnA -< (initial_game, Event (True))
 
 
-initial_game = Game {            mario =   GameElement {x = 300.0, y = 100.0, vx = 0.0, vy = 0.0, ay = -901.0, w = 10.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 1.0 0.0 0.0} 
-                                ,world = [ GameElement {x = 500.0, y = -2.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 1002.0, h = 10.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 0.0}
-                                          ,GameElement {x = 500.0, y = 1000.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 1002.0, h = 10.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 0.0}
-                                          ,GameElement {x = -2.0, y = 500.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 10.0, h = 1002.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 0.0}
-                                          ,GameElement {x = 2500.0, y = 500.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 10.0, h = 1002.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 0.0}
-                                          ,GameElement {x = 300.0, y = 200.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 100.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 1.0}
-                                          ,GameElement {x = 600.0, y = 400.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 100.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 1.0}
-                                          ,GameElement {x = 900.0, y = 600.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 100.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 1.0}
-                                          ,GameElement {x = 1200.0, y = 300.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 100.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 1.0}
-                                          ,GameElement {x = 1500.0, y = 100.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 100.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 1.0}
-                                          ,GameElement {x = 1800.0, y = 200.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 100.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 1.0}
-                                          ,GameElement {x = 2100.0, y = 400.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 100.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 1.0}
-                                          ,GameElement {x = 2400.0, y = 600.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 100.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 0.5 0.5 1.0}
-                                          ,GameElement {x = 500.0, y = 20.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 10.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 1.0 1.0 0.0}]
+initial_game = Game {            mario =   GameElement {x = 300.0, y = 100.0, vx = 0.0, vy = 0.0, ay = -901.0, w = 10.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 1.0 0.0 0.0, uid = 1} 
+                                ,world = [ GameElement {x = 500.0, y = -2.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 1002.0, h = 10.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 0.0, uid = 2}
+                                          ,GameElement {x = 500.0, y = 1000.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 1002.0, h = 10.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 0.0, uid = 3}
+                                          ,GameElement {x = -2.0, y = 500.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 10.0, h = 1002.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 0.0, uid = 4}
+                                          ,GameElement {x = 2500.0, y = 500.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 10.0, h = 1002.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 0.0, uid = 5}
+                                          ,GameElement {x = 300.0, y = 200.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 100.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 1.0, uid = 6}
+                                          ,GameElement {x = 600.0, y = 400.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 100.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 1.0, uid = 7}
+                                          ,GameElement {x = 900.0, y = 600.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 100.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 1.0, uid = 8}
+                                          ,GameElement {x = 1200.0, y = 300.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 100.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 1.0, uid = 9}
+                                          ,GameElement {x = 1500.0, y = 100.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 100.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 1.0, uid = 10}
+                                          ,GameElement {x = 1800.0, y = 200.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 100.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 1.0, uid = 11}
+                                          ,GameElement {x = 2100.0, y = 400.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 100.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 0.0 1.0 1.0, uid = 12}
+                                          ,GameElement {x = 2400.0, y = 600.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 100.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 0.5 0.5 1.0, uid = 13}
+                                          ,GameElement {x = 500.0, y = 20.0, vx = 0.0, vy = 0.0, ay = 0.0, w = 10.0, h = 20.0, moving_v = False, moving_h = False, col = Color3 1.0 1.0 0.0, uid = 14}]
                                 ,screen_offset = 0.0
                          }
 mainSF = parseInput >>> master_combine >>> draw
