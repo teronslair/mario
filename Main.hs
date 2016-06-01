@@ -205,11 +205,11 @@ update_player_from_script = proc fi -> do
 -- based on the current stat of the Game will determine wich SFs need to be created to support newly entered active objects (in the screen)
 -- so output of function is Event ([Indexes_to_be_removed],[Indetifiers_of_objects_to_be_added])  
 pSwitchB_test_activate_deactivate_threads :: SF (Enemy_SF_Input,[Game]) (Event ([Bool], [GameElementIdentifier], Game))
-pSwitchB_test_activate_deactivate_threads = proc ((mario,mario_world), enemy_worlds) -> do
-        let enemies_still_valid = filter (\enemy -> if between (x mario - 800) (x enemy) (x mario + 800) then True else False) $ map (\gw -> (mario gw)) enemy_worlds
-        let enemies_still_valid_mask = map (\enemy -> if between (x mario - 800) (x enemy) (x mario + 800) then True else False) $ map (\gw -> mario gw) enemy_worlds
-        let enemies_to_add = map (\ge -> uid ge) $ filter (\ge -> (between (x mario - 800) (x ge) (x mario + 800)) && (not (elem ge enemies_still_valid))) $ filter (\ge -> enemy ge) mario_world
-        returnA -< Event(enemies_still_valid_mask,enemies_to_add,mario_world)
+pSwitchB_test_activate_deactivate_threads = proc ((mario_,mario_game), enemy_worlds) -> do
+        let enemies_still_valid = filter (\enemy -> if between ((x mario_) - 800) (x enemy) ((x mario_) + 800) then True else False) $ map (\gw -> (mario gw)) enemy_worlds
+        let enemies_still_valid_mask = map (\enemy -> if between ((x mario_) - 800) (x enemy) ((x mario_) + 800) then True else False) $ map (\gw -> mario gw) enemy_worlds
+        let enemies_to_add = map (\ge -> uid ge) $ filter (\ge -> (between ((x mario_) - 800) (x ge) ((x mario_) + 800)) && (not (elem ge enemies_still_valid))) $ filter (\ge -> (enemy ge)) (world mario_game)
+        returnA -< Event(enemies_still_valid_mask,enemies_to_add,mario_game)
 
 -- first_only =  arr (\(a,b) -> a)
 -- second_only = arr (\(a,b) -> b)
@@ -234,9 +234,10 @@ enemy_update = update_player_from_script >>> player_phsx
 -- deactivate_enemies enemies_to_keep enemy_SF_list = map fromJust $ filter (/=Nothing) $ zipWith (\a b -> if a then Just b else Nothing) enemies_to_keep enemy_SF_list
 deactivate_enemies enemies_to_keep enemy_SF_list = map (\(a,b)->b) $ filter (\(a,b)-> a == True) $ zipWith (\a b -> (a,b)) enemies_to_keep enemy_SF_list
 
+activate_enemies :: [GameElementIdentifier] -> [SF Enemy_SF_Input Game] -> Game -> [SF Enemy_SF_Input Game]
 activate_enemies [] enemies_already_active base_game = []
 activate_enemies enemies_to_add enemies_already_active base_game = 
-        let     enemy_game = base_game {mario = fromJust $ find (== (head enemies_to_add)) (world base_game)}
+        let     enemy_game = base_game {mario = fromJust $ find (\ ge -> (uid ge) == (head enemies_to_add)) (world base_game)}
                 new_enemy_sf = enemy_SF_constructor enemy_game
         in      activate_enemies (tail enemies_to_add) (enemies_already_active ++ [new_enemy_sf]) base_game
 
@@ -364,13 +365,13 @@ world_constructor = proc i_game -> do
 master_combine :: SF ActivatedKeys Game
 master_combine = proc pi -> do
         rec 
-                g_pu    <- player_update -< (pi, g_wu_d)
-                g_cd    <- (initial_game --> collision_detector) -< (g_pu, g_wu_d)
-                g_wc    <- world_constructor -< g_cd
-                g_etm   <- enemy_threads_manager -< (mario g_wc, g_wc)
-                g_wu    <- game_unifier -< (g_etm,g_wc)
-                g_wu_d  <- iPre initial_game -< g_wu
-        returnA -< g_wu
+                g_pu    <- (initial_game --> player_update) -< (pi, g_wc_d)
+                g_cd    <- (initial_game --> collision_detector) -< (g_pu, g_wc_d)
+                g_etm   <- ([] -->enemy_threads_manager) -< ((mario g_cd), g_cd)
+                g_wu    <- (initial_game --> game_unifier) -< (g_etm,g_cd)
+                g_wc    <- (initial_game --> world_constructor) -< g_wu
+                g_wc_d  <- iPre initial_game -< g_wc
+        returnA -< g_wc
 
 seeder :: SF Game (Game , Event (Bool))
 seeder = proc game -> do
@@ -435,7 +436,7 @@ main = do {
                 -- Graphics.UI.GLUT.idleCallback $= Just (idle newInputRef oldTimeRef rh);
                 -- Graphics.UI.GLUT.keyboardMouseCallback $= Just (\k ks m _ -> writeIORef newInputRef (Event $ Keyboard k ks m));
                 Graphics.UI.GLUT.keyboardMouseCallback $= Just (\k ks m _ -> modifyIORef' newInputRef $ updateIORefWith k ks);
-                actionOnWindowClose $= MainLoopReturns;
+                --actionOnWindowClose $= MainLoopReturns;
                 addTimerCallback 16 $ animate;
                 -- oldTime' <- get elapsedTime;
                 oldTime' <- getPOSIXTime;
