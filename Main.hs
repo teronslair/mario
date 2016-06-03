@@ -85,9 +85,20 @@ data GameElement = GameElement {
                                                 col :: Color3 GLfloat,
                                                 uid :: GameElementIdentifier,
                                                 enemy :: Bool
-                                        } deriving (Show)
+                                        }
+instance Show GameElement where
+        show ge = "\n GE [uid = " ++ show (uid ge) ++ " " ++
+                  "x = " ++ show (x ge) ++ " " ++
+                  "y = " ++ show (y ge) ++ " " ++
+                  "vx = " ++ show (vx ge) ++ " " ++
+                  "vy = " ++ show (vy ge) ++ " " ++
+                  "en = " ++ show (enemy ge) ++ " ]GE"
+
 instance Eq GameElement where
         x == y = uid x == uid y
+instance Show (SF a b) where
+    show sf = "SF"
+
 data PlayerBounds = PlayerBounds {
                                                 highx :: GLfloat,
                                                 lowx :: GLfloat,
@@ -103,7 +114,10 @@ data Game = Game {
                                 world :: GameScene,
                                 -- enemies :: GameScene,
                                 screen_offset :: GLfloat
-                        } deriving (Show)
+                        }
+instance Show Game where
+        show g = "\nGAME[" ++ show (mario g) ++ show (world g) ++ "\n offset = " ++ show (screen_offset g) ++ "\n ]GAME "
+
 data Direction = Upd | Downd | Leftd | Rightd | Nodir deriving (Eq, Show)
 
 ---------------------------------- game logic -------------------------------
@@ -190,13 +204,15 @@ player_phsx = proc game -> do
 
 type Enemy_SF_Input = (GameElement, Game)
 
+update_player_from_script_logging = False
 update_player_from_script :: SF Enemy_SF_Input Game
 update_player_from_script = proc fi -> do
         let (mario_i, enemy_game) = fi
-        let horiz_speed
+        let horiz_speed_v
                         | ((x $ mario_i)  > (x $ mario $ enemy_game)) = 100
                         | ((x $ mario_i)  < (x $ mario $ enemy_game)) = (-100)
                         | ((x $ mario_i) == (x $ mario $ enemy_game)) = 0
+        let horiz_speed = if update_player_from_script_logging then (trace ("\nIn update_player_from_script speed output: " ++ show horiz_speed_v ++ "\n") horiz_speed_v) else horiz_speed_v
         let o_enemy_game = enemy_game {mario = (mario enemy_game) {vx = ((realToFrac (horiz_speed )) :: GLfloat)}}
         returnA -< o_enemy_game
 
@@ -204,27 +220,29 @@ update_player_from_script = proc fi -> do
 -- based on the [Game] output of all SFs will determine wich SFs (indexed in list) have managed to simulate their player out of the screen and
 -- based on the current stat of the Game will determine wich SFs need to be created to support newly entered active objects (in the screen)
 -- so output of function is Event ([Indexes_to_be_removed],[Indetifiers_of_objects_to_be_added])  
+pSwitchB_test_activate_deactivate_threads_logging = True
 pSwitchB_test_activate_deactivate_threads :: SF (Enemy_SF_Input,[Game]) (Event ([Bool], [GameElementIdentifier], Game))
-pSwitchB_test_activate_deactivate_threads = proc ((mario_,mario_game), enemy_worlds) -> do
-        let enemies_still_valid = filter (\enemy -> if between ((x mario_) - 800) (x enemy) ((x mario_) + 800) then True else False) $ map (\gw -> (mario gw)) enemy_worlds
-        let enemies_still_valid_mask = map (\enemy -> if between ((x mario_) - 800) (x enemy) ((x mario_) + 800) then True else False) $ map (\gw -> mario gw) enemy_worlds
-        let enemies_to_add = map (\ge -> uid ge) $ filter (\ge -> (between ((x mario_) - 800) (x ge) ((x mario_) + 800)) && (not (elem ge enemies_still_valid))) $ filter (\ge -> (enemy ge)) (world mario_game)
-        returnA -< Event(enemies_still_valid_mask,enemies_to_add,mario_game)
+pSwitchB_test_activate_deactivate_threads = proc ((mario_,marios_game), enemy_games) -> do
+        -- let enemies_still_valid = filter (\enemy -> if between ((x mario_) - 800) (x enemy) ((x mario_) + 800) then True else False) $ map (\eg -> (mario eg)) enemy_games
+        -- let enemies_still_valid_mask_v = map (\enemy -> if between ((x mario_) - 800) (x enemy) ((x mario_) + 800) then True else False) $ map (\gw -> mario gw) enemy_games
+        -- let enemies_to_add_v = map (\ge -> uid ge) $ filter (\ge -> (between ((x mario_) - 800) (x ge) ((x mario_) + 800)) && (not (elem ge enemies_still_valid))) $ filter (\ge -> (enemy ge)) (world marios_game)
+        -- let enemies_still_valid_mask = if pSwitchB_test_activate_deactivate_threads_logging then (trace ("In pSwitchB_test_activate_deactivate_threads enemies_still_valid_mask output: " ++ "\n" ++ show enemies_still_valid_mask_v ++ "\n") enemies_still_valid_mask_v) else enemies_still_valid_mask_v
+        -- let enemies_to_add = if pSwitchB_test_activate_deactivate_threads_logging then (trace ("In pSwitchB_test_activate_deactivate_threads enemies_to_add output: " ++ "\n" ++ show enemies_to_add_v ++ "\n") enemies_to_add_v) else enemies_to_add_v
+        -- -- returnA -< Event(enemies_still_valid_mask, enemies_to_add, marios_game)
+        -- returnA -< Event([], [], marios_game)
+        returnA -< NoEvent
 
 -- first_only =  arr (\(a,b) -> a)
 -- second_only = arr (\(a,b) -> b)
 
 
 enemy_SF_constructor :: Game -> SF Enemy_SF_Input Game
-enemy_SF_constructor reference_game =
-        let enemy_initial_game = reference_game
-        in (proc (mario, mario_game) -> do
-                rec 
-                        g_pu    <- enemy_update -< (mario, g_wc_d)
-                        g_cd    <- (enemy_initial_game --> collision_detector) -< (g_pu, g_wc_d)
-                        g_wc    <- world_constructor -< g_cd
-                        g_wc_d  <- iPre enemy_initial_game -< g_wc
-                returnA -< g_wc)
+enemy_SF_constructor reference_game = proc (mario, enemy_game) -> do
+                                                                        rec 
+                                                                                g_pu    <- enemy_update -< (mario, g_cd_d)
+                                                                                g_cd    <- (reference_game --> collision_detector) -< (g_pu, g_cd_d)
+                                                                                g_cd_d  <- (reference_game --> pre) -< g_cd
+                                                                        returnA -< g_cd
 
 player_update = update_player_from_keys >>> player_phsx
 enemy_update = update_player_from_script >>> player_phsx
@@ -232,22 +250,29 @@ enemy_update = update_player_from_script >>> player_phsx
 -- deactivate_enemies enemies_to_keep enemy_SF_list = undefined
 
 -- deactivate_enemies enemies_to_keep enemy_SF_list = map fromJust $ filter (/=Nothing) $ zipWith (\a b -> if a then Just b else Nothing) enemies_to_keep enemy_SF_list
-deactivate_enemies enemies_to_keep enemy_SF_list = map (\(a,b)->b) $ filter (\(a,b)-> a == True) $ zipWith (\a b -> (a,b)) enemies_to_keep enemy_SF_list
+-- deactivate_enemies enemies_to_keep_mask enemy_SF_list = map (\(a,b)->b) $ filter (\(a,b)-> a == True) $ zipWith (\a b -> (a,b)) enemies_to_keep_mask enemy_SF_list
+deactivate_enemies enemies_to_keep_mask enemy_SF_list = enemy_SF_list
 
 activate_enemies :: [GameElementIdentifier] -> [SF Enemy_SF_Input Game] -> Game -> [SF Enemy_SF_Input Game]
-activate_enemies [] enemies_already_active base_game = []
-activate_enemies enemies_to_add enemies_already_active base_game = 
-        let     enemy_game = base_game {mario = fromJust $ find (\ ge -> (uid ge) == (head enemies_to_add)) (world base_game)}
-                new_enemy_sf = enemy_SF_constructor enemy_game
-        in      activate_enemies (tail enemies_to_add) (enemies_already_active ++ [new_enemy_sf]) base_game
+activate_enemies enemies_to_add enemies_already_active base_game = enemies_already_active
+-- activate_enemies enemies_to_add enemies_already_active base_game = 
+--         let     enemy_game = base_game {mario = fromJust $ find (\ ge -> (uid ge) == (head enemies_to_add)) (world base_game)}
+--                 new_enemy_sf = enemy_SF_constructor enemy_game
+--         -- in      activate_enemies (tail enemies_to_add) (enemies_already_active ++ [new_enemy_sf]) base_game
+--         in      enemies_already_active ++ [new_enemy_sf]
 
 pSwitchB_K_enemy_threads_manager_cont :: [SF Enemy_SF_Input Game] -> ([Bool], [GameElementIdentifier], Game) -> SF Enemy_SF_Input [Game]
-pSwitchB_K_enemy_threads_manager_cont enemy_SF_list (enemies_to_keep, enemies_to_act, base_game) =
-        let     new_enemy_SF_list_1 = deactivate_enemies enemies_to_keep enemy_SF_list
-                new_enemy_SF_list_2 = activate_enemies enemies_to_act new_enemy_SF_list_1 base_game
-        in  pSwitchB new_enemy_SF_list_2 pSwitchB_test_activate_deactivate_threads pSwitchB_K_enemy_threads_manager_cont
+pSwitchB_K_enemy_threads_manager_cont enemy_SF_list (enemies_to_keep, enemies_to_act, base_game) = dpSwitchB enemy_SF_list pSwitchB_test_activate_deactivate_threads pSwitchB_K_enemy_threads_manager_cont
+        -- let     new_enemy_SF_list_1 = deactivate_enemies enemies_to_keep enemy_SF_list
+        --         new_enemy_SF_list_2 = activate_enemies enemies_to_act new_enemy_SF_list_1 base_game
+        -- in  dpSwitchB new_enemy_SF_list_2 pSwitchB_test_activate_deactivate_threads pSwitchB_K_enemy_threads_manager_cont
 
-enemy_threads_manager = pSwitchB [] pSwitchB_test_activate_deactivate_threads pSwitchB_K_enemy_threads_manager_cont
+-- enemy_threads_manager = dpSwitchB [] pSwitchB_test_activate_deactivate_threads pSwitchB_K_enemy_threads_manager_cont
+enemy_threads_manager = dpSwitchB [enemy_SF_1] pSwitchB_test_activate_deactivate_threads pSwitchB_K_enemy_threads_manager_cont
+--embed enemy_threads_manager (((mario initial_game),initial_game) , [(1, Just ((mario initial_game),initial_game)), (1, Just ((mario initial_game),initial_game))])
+
+enemy_SF_1 = enemy_SF_constructor (initial_game {mario = fromJust $ find (\ ge -> (uid ge) == 14) (world initial_game)})
+--embed enemy_SF_1 (((mario initial_game),initial_game) , [(1, Just ((mario initial_game),initial_game)), (1, Just ((mario initial_game),initial_game))])
 
 game_splitter :: SF Game Enemy_SF_Input
 game_splitter  = proc i_game -> do
@@ -367,10 +392,10 @@ master_combine = proc pi -> do
         rec 
                 g_pu    <- (initial_game --> player_update) -< (pi, g_wc_d)
                 g_cd    <- (initial_game --> collision_detector) -< (g_pu, g_wc_d)
-                g_etm   <- ([] -->enemy_threads_manager) -< ((mario g_cd), g_cd)
+                g_etm   <- ([] --> enemy_threads_manager) -< ((mario g_cd), g_cd)
                 g_wu    <- (initial_game --> game_unifier) -< (g_etm,g_cd)
                 g_wc    <- (initial_game --> world_constructor) -< g_wu
-                g_wc_d  <- iPre initial_game -< g_wc
+                g_wc_d  <- (initial_game --> pre) -< g_wc
         returnA -< g_wc
 
 seeder :: SF Game (Game , Event (Bool))
@@ -436,7 +461,7 @@ main = do {
                 -- Graphics.UI.GLUT.idleCallback $= Just (idle newInputRef oldTimeRef rh);
                 -- Graphics.UI.GLUT.keyboardMouseCallback $= Just (\k ks m _ -> writeIORef newInputRef (Event $ Keyboard k ks m));
                 Graphics.UI.GLUT.keyboardMouseCallback $= Just (\k ks m _ -> modifyIORef' newInputRef $ updateIORefWith k ks);
-                --actionOnWindowClose $= MainLoopReturns;
+                actionOnWindowClose $= MainLoopReturns;
                 addTimerCallback 16 $ animate;
                 -- oldTime' <- get elapsedTime;
                 oldTime' <- getPOSIXTime;
